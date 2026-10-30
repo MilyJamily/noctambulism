@@ -1,0 +1,97 @@
+@import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background-color: #020302;
+    color: #d1d8d1;
+    font-family: 'VT323', monospace, 'Courier New';
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* Grain Effect */
+.grain-overlay {
+    position: fixed;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background-image: url('data:image/svg+xml;utf8,<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><filter id="noiseFilter"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" stitchTiles="stitch"/></filter><rect width="100%\" height="100%" filter="url(%23noiseFilter)" opacity="0.04"/></svg>');
+    pointer-events: none;
+    z-index: 999;
+}
+
+#game-container {
+    width: 100vw;
+    height: 100vh;
+    position: relative;
+}
+
+.screen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background-color: #020302;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* Title styling */
+.game-title {
+    font-size: 5rem;
+    letter-spacing: 6px;
+    color: #e2e8e2;
+    text-shadow: 3px 3px 0px #000000, 0 0 15px rgba(100, 140, 100, 0.2);
+    margin-bottom: 5px;
+    text-transform: uppercase;
+}
+
+.subtitle {
+    font-size: 1.3rem;
+    color: #5c6e5c;
+    letter-spacing: 2px;
+    margin-bottom: 50px;
+}
+
+/* SLEEP Button */
+#start-btn {
+    background: #080d08;
+    color: #c2d1c2;
+    border: 2px solid #3b4d3b;
+    padding: 14px 36px;
+    font-family: 'VT323', monospace;
+    font-size: 1.6rem;
+    cursor: pointer;
+    letter-spacing: 3px;
+    box-shadow: 4px 4px 0px #000000;
+    transition: all 0.1 ease;
+}
+
+#start-btn:hover {
+    background: #121c12;
+    color: #ffffff;
+    border-color: #6c8a6c;
+    box-shadow: 2px 2px 0px #000000;
+    transform: translate(2px, 2px);
+}
+
+#start-btn:active {
+    transform: translate(4px, 4px);
+    box-shadow: none;
+}

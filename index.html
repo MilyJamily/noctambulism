@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Noctambulism</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+    <!-- Grain effect -->
+    <div class="grain-overlay"></div>
+
+    <div id="game-container">
+        <!-- Title Screen -->
+        <div id="title-screen" class="screen">
+            <h1 class="game-title">NOCTAMBULISM</h1>
+            <p class="subtitle">- Based on a true story -</p>
+            <button id="start-btn">SLEEP</button>
+        </div>
+
+        <!-- Act 1: Bedroom POV -->
+        <div id="bedroom-scene" class="screen hidden"></div>
+
+        <!-- Act 2: The Dream / Endless Hallway -->
+        <div id="arcade-scene" class="screen hidden"></div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
