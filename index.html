@@ -20,7 +20,27 @@
         <!-- Sketch & Tunnel Vision -->
         <div class="sketch-vignette"></div>
         <div class="sketch-overlay"></div>
+
+        <!-- Terminal prompt for door interaction -->
+        <div id="interaction-prompt" class="hidden">[ PRESS 'E' TO OPEN ]</div>
+
+        <!-- Cell pop-up Window -->
+        <div id="cell-modal" class="hidden">
+            <div class="cell-modal-frame">
+                <div class="cell-header">
+                    <span class="cell-title">LOG_VIEWER // CELL_INSPECTION</span>
+                    <span class="cell-close-hint">[ PRESS 'SPACE' TO EXIT ]</span>
+                </div>
+                <div id="cell-canvas-container"></div>
+                <div id="cell-dialogue-box">
+                    <span id="cell-text"></span>
+                </div>
+            </div>
+        </div>
         
+        <!-- Fade Overlay Transitions -->
+        <div id="fade-overlay"></div>
+
         <!-- Title Screen -->
         <div id="title-screen" class="screen">
             <h1 class="game-title">NOCTAMBULISM</h1>

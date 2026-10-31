@@ -149,3 +149,103 @@ body {
     75% { transform: translate(-2px, -1px); }
     100% { transform: translate(3px, 1px); }
 }
+
+/* Transition Fade Overlay */
+#fade-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: #020302;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 99;
+    transition: opacity 2s ease-in-out;
+}
+
+#fade-overlay.active {
+    opacity: 1;
+}
+
+/* Terminal Retro Interaction Prompt */
+#interaction-prompt {
+    position: fixed;
+    bottom: 20%;
+    left: 50%;
+    transform: translateY(-50%);
+    font-family: 'VT323', monospace;
+    font-size: 1.8rem;
+    color: #88ff88;
+    background-color: rgba(2, 5, 2, 0.85);
+    border: 1px solid #3b6b3b;
+    padding: 6px 16px;
+    letter-spacing: 2px;
+    z-index: 20;
+    pointer-events: none;
+    text-shadow: 0 0 8px rgba(136, 255, 136, 0.6);
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.8);
+}
+
+/* Cell Pop-up Modal */
+#cell-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(2, 6, 2, 0.85);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 100;
+}
+
+.cell-modal-frame {
+    width: 640px;
+    max-width: 90vw;
+    background: #050a05;
+    border: 2px solid #3b6b3b;
+    box-shadow: 0 0 25px rgba(20, 60, 20, 0.6), inset 0 0 15px rgba(0, 0, 0, 0.9);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.cell-header {
+    display: flex;
+    justify-content: space-between;
+    font-family: 'VT323', monospace;
+    font-size: 1.1rem;
+    color: #5c8a5c;
+    border-bottom: 1px solid #1f3a1f;
+    padding-bottom: 4px;
+    letter-spacing: 1px;
+}
+
+.cell-close-hint {
+    color: #88aa88;
+}
+
+#cell-canvas-container {
+    width: 100%;
+    height: 320px;
+    background-color: #020402;
+    border: 1px solid #1a2e1a;
+    position: relative;
+    overflow: hidden;
+}
+
+#cell-dialogue-box {
+    background: #020502;
+    border: 1px solid #284428;
+    padding: 12px;
+    min-height: 55px;
+    font-family: 'VT323', monospace;
+    font-family: 'VT323', monospace;
+    font-size: 1.6rem;
+    color: #a3ffa3;
+    text-shadow: 0 0 6px rgba(163, 255, 163, 0.5);
+    letter-spacing: 2px;
+}
