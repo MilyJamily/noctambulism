@@ -95,3 +95,57 @@ body {
     transform: translate(4px, 4px);
     box-shadow: none;
 }
+
+/* 3D Scene Viewpoints */
+#bedroom-scene, #arcade-scene {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: #020302;
+    overflow: hidden;
+}
+
+.arcade-wrapper {
+    width: 100vw;
+    height: 100vh;
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+/* Tunnel Vision Effect */
+.sketch-vignette {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    z-index: 10;
+    /* Vignette */
+    background: radial-gradient(circle at center, transparent 20%, rgba(0, 0, 0, 0.6) 60%, rgba(0, 3, 0, 0.98) 95%);
+}
+
+/* Extra sketch layer */
+.sketch-overlay {
+    position: fixed;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background-image: url('data:image/svg+xml;utf8,<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><filter id="sketchFilter"><feTurbulence type="fractalNoise" baseFrequency="0.05 0.9" numOctaves="2" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(%23sketchFilter)" opacity="0.08"/></svg>');
+    pointer-events: none;
+    z-index: 11;
+    opacity: 0.5;
+    animation: sketchJitter 0.6s steps(4) infinite;
+}
+
+@keyframes sketchJitter {
+    0% { transform: translate(0, 0); }
+    25% { transform: translate(-3px, 2px); }
+    50% { transform: translate(2px, -3px); }
+    75% { transform: translate(-2px, -1px); }
+    100% { transform: translate(3px, 1px); }
+}
