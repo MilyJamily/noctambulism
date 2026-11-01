@@ -1,7 +1,7 @@
 # Noctambulism
 
 > *Based on a true story*
-A low-poly, weirdcore/liminar 3D web experience built with **Three.js** and **JavaScript**. Step into a fever-dream progression...
+> A low-poly, weirdcore/liminar 3D web experience built with **Three.js** and **JavaScript**. Step into a fever-dream progression...
 
 ## Features
 - **Act 1 (The Bedroom):** Atmospheric POV setup with a diagonal camera angle, low-poly room geometry, and smooth transition mechanics.
