@@ -1,4 +1,63 @@
-// Loop controls and Variables
+// AUDIO MANAGEMENT SYSTEM
+let audioListener;
+const sounds = {
+    ambientDrone: null,
+    step: null,
+    doorOpen: null,
+    terminalClick: null
+};
+
+// Function to initialize audio listener on the camera
+function setupAudio(camera) {
+    if (!audioListener) {
+        audioListener = new THREE.AudioListener();
+    }
+    camera.add(audioListener);
+}
+
+const audioLoader = new THREE.AudioLoader();
+
+// Load ambient background melody safely
+function loadBackgroundMusic(camera) {
+    setupAudio(camera);
+    sounds.ambientDrone = new THREE.Audio(audioListener);
+
+    audioLoader.load(
+        'assets/sounds/weird_melody.mp3',
+        function(buffer) {
+            sounds.ambientDrone.setBuffer(buffer);
+            sounds.ambientDrone.setLoop(true);
+            sounds.ambientDrone.setVolume(0.3);
+            sounds.ambientDrone.play();
+        },
+        undefined,
+        function(error) {
+            console.warn("Audio load warning (weird_melody): ", error);
+        }
+    );
+}
+
+// Function to trigger one-shot sound effects safely
+function playSFX(filePath, volume = 0.5) {
+    if (!audioListener) return;
+
+    const sound = new THREE.Audio(audioListener);
+    audioLoader.load(
+        filePath,
+        function(buffer) {
+            sound.setBuffer(buffer);
+            sound.setLoop(false);
+            sound.setVolume(volume);
+            sound.play();
+        },
+        undefined,
+        function(error) {
+            console.warn("SFX load warning: ", error);
+        }
+    );
+}
+
+// LOOP CONTROLS AND GLOBAL VARIABLES
 let bedroomScene, bedroomCamera, bedroomRenderer, bedroomAnimId;
 let doorMesh;
 let isTransitioning = false;
@@ -18,8 +77,17 @@ const cellDialogues = [
     "[ YOU SHOULDN'T HAVE LOOKED UP. ]"
 ];
 
-// 1. SLEEP Button: Title Screen transition to Act 1 (Bedroom POV) with Fade-In
+// 1. TITLE SCREEN & SLEEP BUTTON EVENT
 document.getElementById('start-btn').addEventListener('click', () => {
+    // Resume audio context safely to comply with browser policies
+    const audioCtx = THREE.AudioContext.getContext();
+    if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+    }
+
+    // Play retro click sound effect
+    playSFX('assets/sounds/computer_glitch.mp3', 0.6);
+
     const fadeOverlay = document.getElementById('fade-overlay');
     fadeOverlay.classList.add('active');
 
@@ -30,6 +98,8 @@ document.getElementById('start-btn').addEventListener('click', () => {
 
         requestAnimationFrame(() => {
             initBedroom3D();
+            // Start background weird melody once bedroom camera is ready
+            loadBackgroundMusic(bedroomCamera);
         });
 
         setTimeout(() => {
@@ -38,7 +108,7 @@ document.getElementById('start-btn').addEventListener('click', () => {
     }, 600);
 });
 
-// 2. ESC to return to Title Screen
+// ESC to return to Title Screen
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         if (isModalOpen) closeCellModal();
@@ -58,7 +128,7 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-// Act 1: POV Bedroom
+// ACT 1: POV BEDROOM
 function initBedroom3D() {
     isTransitioning = false;
     transitionProgress = 0;
@@ -187,9 +257,7 @@ function initBedroom3D() {
     animate();
 }
 
-// ==========================================
 // ACT 2: THE DREAM / HALLWAY
-// ==========================================
 let arcadeScene, arcadeCamera, arcadeRenderer, arcadeAnimId;
 let playerMesh, ghostPlayers = [];
 let corridorDoors = [];
@@ -402,9 +470,7 @@ function initArcade3D() {
     animateArcade();
 }
 
-// ==========================================
 // CELL INSPECTION MODAL (POP-UP SYSTEM)
-// ==========================================
 function openCellModal(doorIndex) {
     isModalOpen = true;
     document.getElementById('interaction-prompt').classList.add('hidden');
@@ -417,7 +483,6 @@ function openCellModal(doorIndex) {
     const container = document.getElementById('cell-canvas-container');
     container.innerHTML = '';
 
-    // Cell 3D scene inside pop-up
     cellScene = new THREE.Scene();
     cellScene.background = new THREE.Color(0x040804);
 
@@ -436,57 +501,48 @@ function openCellModal(doorIndex) {
     const ambientLight = new THREE.AmbientLight(0x223322, 1.2);
     cellScene.add(ambientLight);
 
-    // Iron Bunk Bed Geometry
     const bunkMat = new THREE.MeshStandardMaterial({ color: 0x1f2e1f, flatShading: true });
     const bunkGeo = new THREE.BoxGeometry(1.2, 1.8, 2.2);
     const bunk = new THREE.Mesh(bunkGeo, bunkMat);
     bunk.position.set(-1.2, 0.5, -0.5);
     cellScene.add(bunk);
 
-    // Small barred window on back wall
     const winGeo = new THREE.BoxGeometry(0.8, 0.6, 0.1);
     const winMat = new THREE.MeshStandardMaterial({ color: 0x334433, flatShading: true });
     const win = new THREE.Mesh(winGeo, winMat);
     win.position.set(0, 1.8, -1.9);
     cellScene.add(win);
 
-    // Skeleton remains according to room index
     const boneMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, flatShading: true });
 
     if (doorIndex === 0) {
-        // Room 1: Solitary skull on floor
         const skullGeo = new THREE.SphereGeometry(0.2, 6, 6);
         const skull = new THREE.Mesh(skullGeo, boneMat);
         skull.position.set(0.4, -0.3, 0);
         cellScene.add(skull);
     } else if (doorIndex === 1) {
-        // Room 2: Scattered ribcage/bones
         const ribGeo = new THREE.BoxGeometry(0.4, 0.3, 0.4);
         const rib = new THREE.Mesh(ribGeo, boneMat);
         rib.position.set(0.2, -0.3, -0.2);
         cellScene.add(rib);
     } else if (doorIndex === 2) {
-        // Room 3: Twisted bones near bars
         const boneGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.8, 5);
         const bone = new THREE.Mesh(boneGeo, boneMat);
         bone.rotation.z = 0.5;
         bone.position.set(-0.2, -0.2, 0.3);
         cellScene.add(bone);
     } else if (doorIndex === 3) {
-        // Room 4: The Tank, Talking Skeleton & Sky of Eyes Scene
         const tankGeo = new THREE.CylinderGeometry(0.8, 0.8, 2, 8);
         const tankMat = new THREE.MeshStandardMaterial({ color: 0x224433, transparent: true, opacity: 0.7, flatShading: true });
         const tank = new THREE.Mesh(tankGeo, tankMat);
         tank.position.set(0, 0.6, -0.5);
         cellScene.add(tank);
 
-        // Skeleton inside tank
         const skelGeo = new THREE.BoxGeometry(0.4, 1.2, 0.3);
         const skel = new THREE.Mesh(skelGeo, boneMat);
         skel.position.set(0, 0.6, -0.5);
         cellScene.add(skel);
 
-        // Sky of eyes surreal backdrop
         cellScene.background = new THREE.Color(0x1a0505);
         for (let i = 0; i < 12; i++) {
             const eyeGeo = new THREE.SphereGeometry(0.12, 6, 6);
@@ -505,7 +561,6 @@ function openCellModal(doorIndex) {
         if (!isModalOpen) return;
         cellAnimId = requestAnimationFrame(animateCell);
         
-        // Micro floating animation for scene elements
         const t = Date.now() * 0.001;
         cellCamera.position.y = 1.2 + Math.sin(t) * 0.02;
 
