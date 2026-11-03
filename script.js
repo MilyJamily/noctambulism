@@ -384,7 +384,7 @@ function initArcade3D() {
         if (!currentDoor) return;
 
         const distance = playerMesh.position.distanceTo(currentDoor.position);
-        
+
         if (distance < 4.5 && !currentDoor.userData.opened) {
             currentDoor.userData.opened = true;
             currentDoor.material.color.setHex(0x557755);
@@ -394,7 +394,16 @@ function initArcade3D() {
                 arcadeScene.remove(fadingGhost);
             }
 
-            openCellModal(activeDoorIndex);
+            // Check if this is the 3rd door (index 2)., triggering the real-world glitch sequence
+            if (activeDoorIndex === 2) {
+                triggerRealWorldGlitch();
+            } else if (activeDoorIndex === 3) {
+                // Final door opens directly in full screen
+                triggerFinalClimaxScene();
+            } else {
+                openCellModal(activeDoorIndex);
+            }
+
             activeDoorIndex++;
         }
     }
@@ -573,4 +582,115 @@ function closeCellModal() {
     isModalOpen = false;
     if (cellAnimId) cancelAnimationFrame(cellAnimId);
     document.getElementById('cell-modal').classList.add('hidden');
+}
+
+// Trigger the real-world glitch flash and camera fall recovery
+function triggerRealWorldGlitch() {
+    isModalOpen = true;
+    document.getElementById('interaction-prompt').classList.add('hidden');
+
+    const glitchOverlay = document.getElementById('real-glitch-overlay');
+    glitchOverlay.classList.add('active');
+
+    // Play intense glitch sound
+    playSFX('assets/sounds/passingby_glitch.mp3', 0.8);
+
+    setTimeout(() => {
+        glitchOverlay.classList.remove('active');
+
+        // Simulate camera falling down and recovering
+        let dropProgress = 0;
+        const dropInterval = setInterval(() => {
+            dropProgress += 0.02;
+            arcadeCamera.position.y = Math.max(0.4, 1.8 - Math.sin(dropProgress * Math.PI) * 1.2);
+
+            if (dropProgress >= 1) {
+                clearInterval(dropInterval);
+
+                // Automatically progress to Door 4 after recovering vision
+                setTimeout(() => {
+                    isModalOpen = false;
+                    triggerFinalClimaxScene();
+                }, 800);
+            }
+        }, 30);
+    }, 300);
+}
+
+// Trigger the grand finale full-screen scene for Door 4
+function triggerFinalClimaxScene() {
+    isModalOpen = true;
+    document.getElementById('interaction-prompt').classList.add('hidden');
+
+    const fadeOverlay = document.getElementById('fade-overlay');
+    fadeOverlay.classList.add('active');
+
+    setTimeout(() => {
+        // Clear arcade scene and transform the environment into the final surreal pool room
+        document.getElementById('arcade-scene').classList.add('hidden');
+
+        const container = document.getElementById('arcade-scene');
+        container.classList.remove('hidden');
+        container.innerHTML = '<div class="arcade-wrapper" id="final-canvas-container"></div>';
+
+        const finalWrapper = document.getElementById('final-canvas-container');
+
+        const finalScene = new THREE.Scene();
+        finalScene.background = new THREE.Color(0x020508);
+
+        const finalCamera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        finalCamera.position.set(0, 1.5, 3);
+        finalCamera.lookAt(0, 1, -2);
+
+        const finalRenderer = new THREE.WebGLRenderer({ antilias: false });
+        finalRenderer.setSize(window.innerWidth, window.innerHeight);
+        finalWrapper.appendChild(finalRenderer.domElement);
+
+        // Surreal lighting and radiant blue water tank
+        const waterLight = new THREE.PointLight(0x00aaff, 3, 15);
+        waterLight.position.set(0, 2, -2);
+        finalScene.add(waterLight);
+
+        const ambientLight = new THREE.AmbientLight(0x112233, 1.5);
+        finalScene.add(ambientLight);
+
+        // Radiant blue pool
+        const tankGeo = new THREE.CylinderGeometry(2, 2, 2.5, 12);
+        const tankMat = new THREE.MeshStandardMaterial({ color: 0x0088ff, transparent: true, opacity: 0.6, flatShading: true });
+        const tank = new THREE.Mesh(tankGeo, tankMat);
+        tank.position.set(0, 0.2, -6);
+        finalScene.add(tank);
+
+        // Skeleton inside the tank
+        const boneMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, flatShading: true });
+        const skelGeo = new THREE.BoxGeometry(0.6, 1.5, 0.4);
+        const skeleton = new THREE.Mesh(skelGeo, boneMat);
+        skeleton.position.set(0, 0.5, -6);
+        finalScene.add(skeleton);
+
+        // Surreal sky of eyes
+        for (let i = 0; i < 25; i++) {
+            const eyeGeo = new THREE.SphereGeometry(0.15, 6, 6);
+            const eyeMat = new THREE.MeshBasicMaterial({ color: (i % 3 === 0) ? 0xff0000 : 0xffffff });
+            const eye = new THREE.Mesh(eyeGeo, eyeMat);
+            eye.position.set(
+                (Math.random() - 0.5) * 12,
+                3 + Math.random() * 4,
+                -4 - Math.random() * 8
+            );
+            finalScene.add(eye);
+        }
+
+        setTimeout(() => {
+            fadeOverlay.classList.remove('active');
+        }, 500);
+
+        function animateFinal() {
+            requestAnimationFrame(animateFinal);
+            finalCamera.position.z -= 0.005; // Slow eerie forward creep into the final abyss
+            finalRenderer.render(finalScene, finalCamera);
+        }
+        animateFinal();
+
+    }, 1000);
 }

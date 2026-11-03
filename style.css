@@ -249,3 +249,22 @@ body {
     text-shadow: 0 0 6px rgba(163, 255, 163, 0.5);
     letter-spacing: 2px;
 }
+
+/* Real World Glitch Effect */
+#real-glitch-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: #d1d8d1;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 98;
+    transition: opacity 0.05s steps(2, start);
+}
+
+#real-glitch-overlay.active {
+    opacity: 0.95;
+    filter: invert(1) contrast(200%);
+}
