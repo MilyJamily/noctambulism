@@ -1,3 +1,6 @@
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+
 // AUDIO MANAGEMENT SYSTEM
 let audioListener;
 const sounds = {
@@ -79,13 +82,11 @@ const cellDialogues = [
 
 // 1. TITLE SCREEN & SLEEP BUTTON EVENT
 document.getElementById('start-btn').addEventListener('click', () => {
-    // Resume audio context safely to comply with browser policies
     const audioCtx = THREE.AudioContext.getContext();
     if (audioCtx && audioCtx.state === 'suspended') {
         audioCtx.resume();
     }
 
-    // Play retro click sound effect
     playSFX('assets/sounds/computer_glitch.mp3', 0.6);
 
     const fadeOverlay = document.getElementById('fade-overlay');
@@ -98,7 +99,6 @@ document.getElementById('start-btn').addEventListener('click', () => {
 
         requestAnimationFrame(() => {
             initBedroom3D();
-            // Start background weird melody once bedroom camera is ready
             loadBackgroundMusic(bedroomCamera);
         });
 
@@ -164,6 +164,12 @@ function initBedroom3D() {
     floor.position.set(0, -1, 0);
     bedroomScene.add(floor);
 
+    const backWallGeo = new THREE.PlaneGeometry(25, 25);
+    const backWallMat = new THREE.MeshStandardMaterial({ color: 0x060f06, flatShading: true });
+    const backWall = new THREE.Mesh(backWallGeo, backWallMat);
+    backWall.position.set (0, 6.5, -4.1);
+    bedroomScene.add(backWall);
+
     const doorGeo = new THREE.BoxGeometry(1.8, 3.4, 0.15);
     const doorMat = new THREE.MeshStandardMaterial({ color: 0x2e442e, flatShading: true });
     doorMesh = new THREE.Mesh(doorGeo, doorMat);
@@ -176,11 +182,32 @@ function initBedroom3D() {
     handle.position.set(-0.6, 0.6, -3.9);
     bedroomScene.add(handle);
 
-    const bedGeo = new THREE.BoxGeometry(3.5, 0.9, 5);
+    const bedGeo = new THREE.BoxGeometry(3.2, 0.7, 4.5);
     const bedMat = new THREE.MeshStandardMaterial({ color: 0x192a19, flatShading: true });
     const bed = new THREE.Mesh(bedGeo, bedMat);
-    bed.position.set(-3.2, -0.5, 1.5);
+    bed.position.set(-2.5, -0.65, 0.5);
     bedroomScene.add(bed);
+
+    const blanketGeo = new THREE.BoxGeometry(3.1, 0.08, 4.3);
+    const blanketMat = new THREE.MeshStandardMaterial({ color: 0x0b1329, flatShading: true });
+    const blanket = new THREE.Mesh(blanketGeo, blanketMat);
+    blanket.position.set(-2.5, -0.28, 0.5);
+    bedroomScene.add(blanket);
+
+    const starMat = new THREE.MeshBasicMaterial({ color: 0x88bbff });
+    const starPositions = [
+        [-3.0, -0.22, -0.5],
+        [-2.0, -0.22, 0.2],
+        [-2.7, -0.22, 1.2],
+        [-1.8, -0.22, -0.8],
+    ];
+
+    starPositions.forEach(pos => {
+        const starGeo = new THREE.BoxGeometry(0.15, 0.02, 0.15);
+        const star = new THREE.Mesh(starGeo, starMat);
+        star.position.set(pos[0], pos[1], pos[2]);
+        bedroomScene.add(star);
+    });
 
     window.addEventListener('mousemove', onCanvasMouseMove);
     window.addEventListener('click', onCanvasClick);
@@ -259,12 +286,33 @@ function initBedroom3D() {
 
 // ACT 2: THE DREAM / HALLWAY
 let arcadeScene, arcadeCamera, arcadeRenderer, arcadeAnimId;
-let playerMesh, ghostPlayers = [];
+let playerMesh;
+let skeletonModelRef = null;
+let ghostPlayers = [];
 let corridorDoors = [];
 let activeDoorIndex = 0;
 const keysPressed = {};
 
+// Adjust this value if the GLB model's original forward direction is different.
+// This value turns a model exported facing +X to face the hallway's negative Z axis.
+const MODEL_FORWARD_OFFSET = -Math.PI / 2;
+
+// Animation mixer variables for the skeleton
+let skeletonMixer = null;
+let walkAction = null;
+let idleAction = null;
+const clock = new THREE.Clock();
+
 function initArcade3D() {
+    // Reset input and model state when entering the hallway.
+    Object.keys(keysPressed).forEach(key => {
+        keysPressed[key] = false;
+    });
+    skeletonModelRef = null;
+    skeletonMixer = null;
+    walkAction = null;
+    idleAction = null;
+
     const container = document.getElementById('arcade-scene');
     container.innerHTML = '<div class="arcade-wrapper" id="arcade-canvas"></div>';
     const wrapper = document.getElementById('arcade-canvas');
@@ -324,20 +372,63 @@ function initArcade3D() {
         arcadeScene.add(pRight);
     }
 
-    const playerGeo = new THREE.BoxGeometry(0.8, 1.8, 0.5);
-    const playerMat = new THREE.MeshStandardMaterial({ color: 0x3a523a, flatShading: true });
-    playerMesh = new THREE.Mesh(playerGeo, playerMat);
+    // PLAYER CHARACTER CONTAINER
+    playerMesh = new THREE.Group();
     playerMesh.position.set(0, 0, 0);
     arcadeScene.add(playerMesh);
 
-    ghostPlayers = [];
-    for (let i = 1; i <= 3; i++) {
-        const ghostMat = new THREE.MeshStandardMaterial({ color: 0x223322, transparent: true, opacity: 0.6, flatShading: true });
-        const ghost = new THREE.Mesh(playerGeo, ghostMat);
-        ghost.position.set(0, 0, i * 2.5);
-        arcadeScene.add(ghost);
-        ghostPlayers.push(ghost);
-    }
+    // FALLBACK PLACEHOLDER CUBE (Visible until GLB loads)
+    const fallbackGeo = new THREE.BoxGeometry(0.8, 1.8, 0.5);
+    const fallbackMat = new THREE.MeshStandardMaterial({ color: 0x3a523a, flatShading: true });
+    const fallbackMesh = new THREE.Mesh(fallbackGeo, fallbackMat);
+    fallbackMesh.name = 'fallback-placeholder';
+    playerMesh.add(fallbackMesh);
+
+    // LOAD CUSTOM .GLB SKELETON MODEL SAFELY WITH ANIMATION & CORRECT SCALE/ROTATION
+    const gltfLoader = new GLTFLoader();
+    gltfLoader.load(
+        'assets/models/skeleton_IdleWalk.glb',
+        function (gltf) {
+            const skeletonModel = gltf.scene;
+
+            // Keep a direct reference instead of relying on the model's child index.
+            skeletonModelRef = skeletonModel;
+
+            // FIX SCALE & POSITION
+            skeletonModel.scale.set(1.5, 1.5, 1.5);
+            skeletonModel.position.set(0, -1.0, 0);
+            skeletonModel.rotation.y = MODEL_FORWARD_OFFSET;
+
+            const oldPlaceholder = playerMesh.getObjectByName('fallback-placeholder');
+            if (oldPlaceholder) {
+                playerMesh.remove(oldPlaceholder);
+            }
+
+            playerMesh.add(skeletonModel);
+
+            // SET UP ANIMATION MIXER FOR IDLE AND WALK SEPARATELY
+            if (gltf.animations && gltf.animations.length > 0) {
+                skeletonMixer = new THREE.AnimationMixer(skeletonModel);
+                
+                // If there are multiple clips (e.g. 0 = Idle, 1 = Walk)
+                idleAction = skeletonMixer.clipAction(gltf.animations[0]);
+                walkAction = gltf.animations.length > 1 ? skeletonMixer.clipAction(gltf.animations[1]) : idleAction;
+
+                idleAction.play();
+                walkAction.play();
+                
+                // Start with idle weight full, walk weight zero
+                idleAction.setEffectiveWeight(1);
+                walkAction.setEffectiveWeight(0);
+            }
+
+            console.log('Player skeleton model loaded successfully with animations!', skeletonModel);
+        },
+        undefined,
+        function (error) {
+            console.warn('Warning: Could not load skeleton GLB model. Using fallback placeholder instead.', error);
+        }
+    );
 
     corridorDoors = [];
     const doorGeo = new THREE.BoxGeometry(1.6, 3, 0.2);
@@ -364,7 +455,8 @@ function initArcade3D() {
         if (isModalOpen) return;
 
         const key = e.key.toLowerCase();
-        if (key === 'w' || key === 'a' || key === 'd') {
+        if (key === 'w' || key === 's' || key === 'a' || key === 'd') {
+            e.preventDefault();
             keysPressed[key] = true;
         }
         if (key === 'e') {
@@ -374,7 +466,8 @@ function initArcade3D() {
 
     function onKeyUp(e) {
         const key = e.key.toLowerCase();
-        if (keysPressed[key]) {
+        if (key === 'w' || key === 's' || key === 'a' || key === 'd') {
+            e.preventDefault();
             keysPressed[key] = false;
         }
     }
@@ -394,11 +487,9 @@ function initArcade3D() {
                 arcadeScene.remove(fadingGhost);
             }
 
-            // Check if this is the 3rd door (index 2)., triggering the real-world glitch sequence
             if (activeDoorIndex === 2) {
                 triggerRealWorldGlitch();
             } else if (activeDoorIndex === 3) {
-                // Final door opens directly in full screen
                 triggerFinalClimaxScene();
             } else {
                 openCellModal(activeDoorIndex);
@@ -413,6 +504,11 @@ function initArcade3D() {
     function animateArcade() {
         arcadeAnimId = requestAnimationFrame(animateArcade);
 
+        const delta = clock.getDelta();
+        if (skeletonMixer) {
+            skeletonMixer.update(delta);
+        }
+
         if (isModalOpen) {
             arcadeRenderer.render(arcadeScene, arcadeCamera);
             return;
@@ -420,18 +516,47 @@ function initArcade3D() {
 
         const moveSpeed = 0.038; 
         let isMoving = false;
+        let inputX = 0;
+        let inputZ = 0;
 
-        if (keysPressed['w']) {
-            playerMesh.position.z -= moveSpeed;
-            isMoving = true;
-        }
-        if (keysPressed['a'] && playerMesh.position.x > -2.5) {
-            playerMesh.position.x -= moveSpeed * 0.8;
-            isMoving = true;
-        }
-        if (keysPressed['d'] && playerMesh.position.x < 2.5) {
-            playerMesh.position.x += moveSpeed * 0.8;
-            isMoving = true;
+        // Calculate directional input vector based on W, A, S, D
+        if (keysPressed['w']) { inputZ += 1; isMoving = true; }
+        if (keysPressed['s']) { inputZ -= 1; isMoving = true; }
+        if (keysPressed['a']) { inputX -= 1; isMoving = true; }
+        if (keysPressed['d']) { inputX += 1; isMoving = true; }
+
+        if (isMoving) {
+            // Normalize diagonal movement speed
+            const length = Math.sqrt(inputX * inputX + inputZ * inputZ);
+            playerMesh.position.x += (inputX / length) * moveSpeed * (inputX !== 0 && inputZ !== 0 ? 0.8 : 1);
+            playerMesh.position.z += (inputZ / length) * moveSpeed * (inputX !== 0 && inputZ !== 0 ? 0.8 : 1);
+
+            // Clamp bounds inside the hallway
+            playerMesh.position.x = Math.max(-2.5, Math.min(2.5, playerMesh.position.x));
+            playerMesh.position.z = Math.min(20, playerMesh.position.z);
+
+            // Calculate the target angle using the character's forward direction (-Z).
+            const targetAngle = Math.atan2(inputX, -inputZ) + MODEL_FORWARD_OFFSET;
+
+            if (skeletonModelRef) {
+                // Smoothly interpolate the model rotation through the shortest path.
+                let diff = targetAngle - skeletonModelRef.rotation.y;
+                while (diff < -Math.PI) diff += Math.PI * 2;
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                skeletonModelRef.rotation.y += diff * 0.2;
+            }
+
+            // Crossfade to Walk Animation
+            if (walkAction && idleAction) {
+                idleAction.setEffectiveWeight(0);
+                walkAction.setEffectiveWeight(1);
+            }
+        } else {
+            // Crossfade back to Idle Animation when stopped
+            if (walkAction && idleAction) {
+                idleAction.setEffectiveWeight(1);
+                walkAction.setEffectiveWeight(0);
+            }
         }
 
         const currentDoor = corridorDoors[activeDoorIndex];
@@ -592,13 +717,11 @@ function triggerRealWorldGlitch() {
     const glitchOverlay = document.getElementById('real-glitch-overlay');
     glitchOverlay.classList.add('active');
 
-    // Play intense glitch sound
     playSFX('assets/sounds/passingby_glitch.mp3', 0.8);
 
     setTimeout(() => {
         glitchOverlay.classList.remove('active');
 
-        // Simulate camera falling down and recovering
         let dropProgress = 0;
         const dropInterval = setInterval(() => {
             dropProgress += 0.02;
@@ -607,7 +730,6 @@ function triggerRealWorldGlitch() {
             if (dropProgress >= 1) {
                 clearInterval(dropInterval);
 
-                // Automatically progress to Door 4 after recovering vision
                 setTimeout(() => {
                     isModalOpen = false;
                     triggerFinalClimaxScene();
@@ -626,7 +748,6 @@ function triggerFinalClimaxScene() {
     fadeOverlay.classList.add('active');
 
     setTimeout(() => {
-        // Clear arcade scene and transform the environment into the final surreal pool room
         document.getElementById('arcade-scene').classList.add('hidden');
 
         const container = document.getElementById('arcade-scene');
@@ -642,11 +763,10 @@ function triggerFinalClimaxScene() {
         finalCamera.position.set(0, 1.5, 3);
         finalCamera.lookAt(0, 1, -2);
 
-        const finalRenderer = new THREE.WebGLRenderer({ antilias: false });
+        const finalRenderer = new THREE.WebGLRenderer({ antialias: false });
         finalRenderer.setSize(window.innerWidth, window.innerHeight);
         finalWrapper.appendChild(finalRenderer.domElement);
 
-        // Surreal lighting and radiant blue water tank
         const waterLight = new THREE.PointLight(0x00aaff, 3, 15);
         waterLight.position.set(0, 2, -2);
         finalScene.add(waterLight);
@@ -654,21 +774,18 @@ function triggerFinalClimaxScene() {
         const ambientLight = new THREE.AmbientLight(0x112233, 1.5);
         finalScene.add(ambientLight);
 
-        // Radiant blue pool
         const tankGeo = new THREE.CylinderGeometry(2, 2, 2.5, 12);
         const tankMat = new THREE.MeshStandardMaterial({ color: 0x0088ff, transparent: true, opacity: 0.6, flatShading: true });
         const tank = new THREE.Mesh(tankGeo, tankMat);
         tank.position.set(0, 0.2, -6);
         finalScene.add(tank);
 
-        // Skeleton inside the tank
         const boneMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, flatShading: true });
         const skelGeo = new THREE.BoxGeometry(0.6, 1.5, 0.4);
         const skeleton = new THREE.Mesh(skelGeo, boneMat);
         skeleton.position.set(0, 0.5, -6);
         finalScene.add(skeleton);
 
-        // Surreal sky of eyes
         for (let i = 0; i < 25; i++) {
             const eyeGeo = new THREE.SphereGeometry(0.15, 6, 6);
             const eyeMat = new THREE.MeshBasicMaterial({ color: (i % 3 === 0) ? 0xff0000 : 0xffffff });
@@ -687,7 +804,7 @@ function triggerFinalClimaxScene() {
 
         function animateFinal() {
             requestAnimationFrame(animateFinal);
-            finalCamera.position.z -= 0.005; // Slow eerie forward creep into the final abyss
+            finalCamera.position.z -= 0.005;
             finalRenderer.render(finalScene, finalCamera);
         }
         animateFinal();
