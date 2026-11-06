@@ -293,7 +293,6 @@ let corridorDoors = [];
 let activeDoorIndex = 0;
 const keysPressed = {};
 
-// Adjust this value if the GLB model's original forward direction is different.
 // This value turns a model exported facing +X to face the hallway's negative Z axis.
 const MODEL_FORWARD_OFFSET = -Math.PI / 2;
 
@@ -520,10 +519,10 @@ function initArcade3D() {
         let inputZ = 0;
 
         // Calculate directional input vector based on W, A, S, D
-        if (keysPressed['w']) { inputZ += 1; isMoving = true; }
-        if (keysPressed['s']) { inputZ -= 1; isMoving = true; }
-        if (keysPressed['a']) { inputX -= 1; isMoving = true; }
-        if (keysPressed['d']) { inputX += 1; isMoving = true; }
+        if (keysPressed['w']) { inputZ -= 1; isMoving = true; } // W vai para a frente (-Z)
+        if (keysPressed['s']) { inputZ += 1; isMoving = true; } // S vai para trás (+Z)
+        if (keysPressed['a']) { inputX -= 1; isMoving = true; } // A vai para a esquerda (-X)
+        if (keysPressed['d']) { inputX += 1; isMoving = true; } // D vai para a direita (+X)
 
         if (isMoving) {
             // Normalize diagonal movement speed
@@ -535,8 +534,8 @@ function initArcade3D() {
             playerMesh.position.x = Math.max(-2.5, Math.min(2.5, playerMesh.position.x));
             playerMesh.position.z = Math.min(20, playerMesh.position.z);
 
-            // Calculate the target angle using the character's forward direction (-Z).
-            const targetAngle = Math.atan2(inputX, -inputZ) + MODEL_FORWARD_OFFSET;
+            // Calculate the target angle aligned with movement direction
+            const targetAngle = Math.atan2(inputX, inputZ) + MODEL_FORWARD_OFFSET;
 
             if (skeletonModelRef) {
                 // Smoothly interpolate the model rotation through the shortest path.
@@ -711,7 +710,7 @@ function closeCellModal() {
 
 // Trigger the real-world glitch flash and camera fall recovery
 function triggerRealWorldGlitch() {
-    isModalOpen = true;
+    isModalOpen = false;
     document.getElementById('interaction-prompt').classList.add('hidden');
 
     const glitchOverlay = document.getElementById('real-glitch-overlay');
@@ -721,22 +720,8 @@ function triggerRealWorldGlitch() {
 
     setTimeout(() => {
         glitchOverlay.classList.remove('active');
-
-        let dropProgress = 0;
-        const dropInterval = setInterval(() => {
-            dropProgress += 0.02;
-            arcadeCamera.position.y = Math.max(0.4, 1.8 - Math.sin(dropProgress * Math.PI) * 1.2);
-
-            if (dropProgress >= 1) {
-                clearInterval(dropInterval);
-
-                setTimeout(() => {
-                    isModalOpen = false;
-                    triggerFinalClimaxScene();
-                }, 800);
-            }
-        }, 30);
-    }, 300);
+        triggerFinalClimaxScene();
+    }, 500);
 }
 
 // Trigger the grand finale full-screen scene for Door 4
