@@ -268,3 +268,20 @@ body {
     opacity: 0.95;
     filter: invert(1) contrast(200%);
 }
+
+.hint-text {
+    position: absolute;
+    bottom: 30px;
+    left: 30px;
+    color: #44aa55;
+    font-family: monospace;
+    font-size: 1.1rem;
+    letter-spacing: 2px;
+    text-shadow: 0 0 5px rgba(68, 170, 85, 0.6);
+    pointer-events: none;
+    z-index: 10;
+}
+
+.hint-text.hidden {
+    display: none;
+}

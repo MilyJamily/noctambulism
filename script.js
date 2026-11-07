@@ -110,6 +110,8 @@ document.getElementById('start-btn').addEventListener('click', () => {
 
 // ESC to return to Title Screen
 document.addEventListener('keydown', (e) => {
+    const key = e.key.toLowerCase();
+
     if (e.key === 'Escape') {
         if (isModalOpen) closeCellModal();
 
@@ -121,10 +123,54 @@ document.addEventListener('keydown', (e) => {
         document.getElementById('title-screen').classList.remove('hidden');
         document.getElementById('fade-overlay').classList.remove('active');
         isTransitioning = false;
+        return;
     }
 
-    if ((e.key === ' ' || e.key.toLowerCase() === 'e') && isModalOpen) {
-        closeCellModal();
+    // Handle Space bar to exit modal or enter unlocked cell
+    if (e.key === ' ' && isModalOpen) {
+        if (activeDoorIndex === 0 && cell1Unlocked) {
+            enterUnlockedCell();
+        } else {
+            closeCellModal();
+        }
+        return;
+    }
+
+    // Handle Padlock unlock with 'E' key on Cell 0
+    if (isModalOpen && activeDoorIndex === 0 && hasKey && !cell1Unlocked && key === 'e') {
+        cell1Unlocked = true;
+        playSFX('assets/sounds/door_open.mp3', 0.8);
+        openCellModal(0); // Refresh modal view to show green padlock and space prompt
+        return;
+    }
+
+    // Handle Chest and Key pickup interaction in hallway
+    if (!isModalOpen && arcadeScene && playerMesh && chestMesh && key === 'e') {
+        const distanceToChest = playerMesh.position.distanceTo(chestMesh.position);
+        if (distanceToChest < 4.0) {
+            if (!chestOpened) {
+                chestOpened = true;
+                playSFX('assets/sounds/terminal_click.mp3', 0.6);
+                chestMesh.material.color.setHex(0x2a1f17);
+
+                const keyGeo = new THREE.BoxGeometry(0.2, 0.5, 0.1);
+                const keyMat = new THREE.MeshBasicMaterial({ color: 0xffd700 });
+                keyMesh = new THREE.Mesh(keyGeo, keyMat);
+                keyMesh.position.set(0, 0.2, 12);
+                arcadeScene.add(keyMesh);
+
+                keyLight = new THREE.PointLight(0xffd700, 2, 5);
+                keyLight.position.set(0, 0.2, 12);
+                arcadeScene.add(keyLight);
+            } else if (chestOpened && !keyCollected) {
+                keyCollected = true;
+                hasKey = true;
+                arcadeScene.remove(keyMesh);
+                arcadeScene.remove(keyLight);
+                document.getElementById('interaction-prompt').classList.add('hidden');
+                console.log("Key collected successfully!");
+            }
+        }
     }
 });
 
@@ -167,7 +213,7 @@ function initBedroom3D() {
     const backWallGeo = new THREE.PlaneGeometry(25, 25);
     const backWallMat = new THREE.MeshStandardMaterial({ color: 0x060f06, flatShading: true });
     const backWall = new THREE.Mesh(backWallGeo, backWallMat);
-    backWall.position.set (0, 6.5, -4.1);
+    backWall.position.set(0, 6.5, -4.1);
     bedroomScene.add(backWall);
 
     const doorGeo = new THREE.BoxGeometry(1.8, 3.4, 0.15);
@@ -293,17 +339,23 @@ let corridorDoors = [];
 let activeDoorIndex = 0;
 const keysPressed = {};
 
-// This value turns a model exported facing +X to face the hallway's negative Z axis.
+// Key, Progress and Cell Variables
+let chestMesh;
+let keyMesh;
+let keyLight;
+let chestOpened = false;
+let keyCollected = false;
+let hasKey = false;
+let cell1Unlocked = false;
+
 const MODEL_FORWARD_OFFSET = -Math.PI / 2;
 
-// Animation mixer variables for the skeleton
 let skeletonMixer = null;
 let walkAction = null;
 let idleAction = null;
 const clock = new THREE.Clock();
 
 function initArcade3D() {
-    // Reset input and model state when entering the hallway.
     Object.keys(keysPressed).forEach(key => {
         keysPressed[key] = false;
     });
@@ -311,6 +363,11 @@ function initArcade3D() {
     skeletonMixer = null;
     walkAction = null;
     idleAction = null;
+    chestOpened = false;
+    keyCollected = false;
+    hasKey = false;
+    cell1Unlocked = false;
+    activeDoorIndex = 0;
 
     const container = document.getElementById('arcade-scene');
     container.innerHTML = '<div class="arcade-wrapper" id="arcade-canvas"></div>';
@@ -371,29 +428,29 @@ function initArcade3D() {
         arcadeScene.add(pRight);
     }
 
-    // PLAYER CHARACTER CONTAINER
+    const chestGeo = new THREE.BoxGeometry(1.2, 0.8, 0.8);
+    const chestMat = new THREE.MeshStandardMaterial({ color: 0x4a3525, flatShading: true });
+    chestMesh = new THREE.Mesh(chestGeo, chestMat);
+    chestMesh.position.set(0, -0.6, 12);
+    arcadeScene.add(chestMesh);
+
     playerMesh = new THREE.Group();
     playerMesh.position.set(0, 0, 0);
     arcadeScene.add(playerMesh);
 
-    // FALLBACK PLACEHOLDER CUBE (Visible until GLB loads)
     const fallbackGeo = new THREE.BoxGeometry(0.8, 1.8, 0.5);
     const fallbackMat = new THREE.MeshStandardMaterial({ color: 0x3a523a, flatShading: true });
     const fallbackMesh = new THREE.Mesh(fallbackGeo, fallbackMat);
     fallbackMesh.name = 'fallback-placeholder';
     playerMesh.add(fallbackMesh);
 
-    // LOAD CUSTOM .GLB SKELETON MODEL SAFELY WITH ANIMATION & CORRECT SCALE/ROTATION
     const gltfLoader = new GLTFLoader();
     gltfLoader.load(
         'assets/models/skeleton_IdleWalk.glb',
         function (gltf) {
             const skeletonModel = gltf.scene;
-
-            // Keep a direct reference instead of relying on the model's child index.
             skeletonModelRef = skeletonModel;
 
-            // FIX SCALE & POSITION
             skeletonModel.scale.set(1.5, 1.5, 1.5);
             skeletonModel.position.set(0, -1.0, 0);
             skeletonModel.rotation.y = MODEL_FORWARD_OFFSET;
@@ -405,27 +462,20 @@ function initArcade3D() {
 
             playerMesh.add(skeletonModel);
 
-            // SET UP ANIMATION MIXER FOR IDLE AND WALK SEPARATELY
             if (gltf.animations && gltf.animations.length > 0) {
                 skeletonMixer = new THREE.AnimationMixer(skeletonModel);
-                
-                // If there are multiple clips (e.g. 0 = Idle, 1 = Walk)
                 idleAction = skeletonMixer.clipAction(gltf.animations[0]);
                 walkAction = gltf.animations.length > 1 ? skeletonMixer.clipAction(gltf.animations[1]) : idleAction;
 
                 idleAction.play();
                 walkAction.play();
-                
-                // Start with idle weight full, walk weight zero
                 idleAction.setEffectiveWeight(1);
                 walkAction.setEffectiveWeight(0);
             }
-
-            console.log('Player skeleton model loaded successfully with animations!', skeletonModel);
         },
         undefined,
         function (error) {
-            console.warn('Warning: Could not load skeleton GLB model. Using fallback placeholder instead.', error);
+            console.warn('Warning: Could not load skeleton GLB model.', error);
         }
     );
 
@@ -477,13 +527,15 @@ function initArcade3D() {
 
         const distance = playerMesh.position.distanceTo(currentDoor.position);
 
-        if (distance < 4.5 && !currentDoor.userData.opened) {
-            currentDoor.userData.opened = true;
-            currentDoor.material.color.setHex(0x557755);
+        if (distance < 4.5) {
+            if (activeDoorIndex === 0 && !cell1Unlocked) {
+                openCellModal(0);
+                return;
+            }
 
-            if (ghostPlayers.length > 0) {
-                const fadingGhost = ghostPlayers.pop();
-                arcadeScene.remove(fadingGhost);
+            if (!currentDoor.userData.opened) {
+                currentDoor.userData.opened = true;
+                currentDoor.material.color.setHex(0x557755);
             }
 
             if (activeDoorIndex === 2) {
@@ -493,8 +545,6 @@ function initArcade3D() {
             } else {
                 openCellModal(activeDoorIndex);
             }
-
-            activeDoorIndex++;
         }
     }
 
@@ -518,58 +568,80 @@ function initArcade3D() {
         let inputX = 0;
         let inputZ = 0;
 
-        // Calculate directional input vector based on W, A, S, D
-        if (keysPressed['w']) { inputZ -= 1; isMoving = true; } // W vai para a frente (-Z)
-        if (keysPressed['s']) { inputZ += 1; isMoving = true; } // S vai para trás (+Z)
-        if (keysPressed['a']) { inputX -= 1; isMoving = true; } // A vai para a esquerda (-X)
-        if (keysPressed['d']) { inputX += 1; isMoving = true; } // D vai para a direita (+X)
+        if (keysPressed['w']) { inputZ -= 1; isMoving = true; }
+        if (keysPressed['s']) { inputZ += 1; isMoving = true; }
+        if (keysPressed['a']) { inputX -= 1; isMoving = true; }
+        if (keysPressed['d']) { inputX += 1; isMoving = true; }
 
         if (isMoving) {
-            // Normalize diagonal movement speed
             const length = Math.sqrt(inputX * inputX + inputZ * inputZ);
             playerMesh.position.x += (inputX / length) * moveSpeed * (inputX !== 0 && inputZ !== 0 ? 0.8 : 1);
             playerMesh.position.z += (inputZ / length) * moveSpeed * (inputX !== 0 && inputZ !== 0 ? 0.8 : 1);
 
-            // Clamp bounds inside the hallway
             playerMesh.position.x = Math.max(-2.5, Math.min(2.5, playerMesh.position.x));
             playerMesh.position.z = Math.min(20, playerMesh.position.z);
 
-            // Calculate the target angle aligned with movement direction
             const targetAngle = Math.atan2(inputX, inputZ) + MODEL_FORWARD_OFFSET;
 
             if (skeletonModelRef) {
-                // Smoothly interpolate the model rotation through the shortest path.
                 let diff = targetAngle - skeletonModelRef.rotation.y;
                 while (diff < -Math.PI) diff += Math.PI * 2;
                 while (diff > Math.PI) diff -= Math.PI * 2;
                 skeletonModelRef.rotation.y += diff * 0.2;
             }
 
-            // Crossfade to Walk Animation
             if (walkAction && idleAction) {
                 idleAction.setEffectiveWeight(0);
                 walkAction.setEffectiveWeight(1);
             }
         } else {
-            // Crossfade back to Idle Animation when stopped
             if (walkAction && idleAction) {
                 idleAction.setEffectiveWeight(1);
                 walkAction.setEffectiveWeight(0);
             }
         }
 
+        // Strict UI Priority Check
         const currentDoor = corridorDoors[activeDoorIndex];
         const promptElem = document.getElementById('interaction-prompt');
-        
-        if (currentDoor && !currentDoor.userData.opened) {
-            const distance = playerMesh.position.distanceTo(currentDoor.position);
-            if (distance < 4.5) {
-                promptElem.classList.remove('hidden');
-            } else {
-                promptElem.classList.add('hidden');
+        const hintElem = document.getElementById('hint-prompt');
+        const distanceToChest = playerMesh.position.distanceTo(chestMesh.position);
+        let promptText = null;
+
+        if (distanceToChest < 4.0) {
+            if (!chestOpened) {
+                promptText = "[ PRESS 'E' TO OPEN CHEST ]";
+            } else if (!keyCollected) {
+                promptText = "[ PRESS 'E' TO TAKE KEY ]";
             }
+        } else if (currentDoor) {
+            const distanceToDoor = playerMesh.position.distanceTo(currentDoor.position);
+            if (distanceToDoor < 4.5) {
+                promptText = "[ PRESS 'E' TO OPEN DOOR ]";
+            }
+        }
+
+        if (promptText) {
+            promptElem.innerText = promptText;
+            promptElem.classList.remove('hidden');
         } else {
             promptElem.classList.add('hidden');
+        }
+
+        // Display hint "[ Look back ]" if player moves past Door 2 without unlocking Cell 1
+        if (hintElem) {
+            if (playerMesh.position.z < -26 && !cell1Unlocked) {
+                hintElem.classList.remove('hidden');
+            } else {
+                hintElem.classList.add('hidden');
+            }
+        }
+
+        if (chestOpened && !keyCollected && keyMesh) {
+            const time = Date.now() * 0.003;
+            keyMesh.position.y = 0.2 + Math.sin(time) * 0.15;
+            keyLight.position.y = keyMesh.position.y;
+            keyMesh.rotation.y += 0.02;
         }
 
         if (isMoving) {
@@ -591,19 +663,12 @@ function initArcade3D() {
             playerMesh.position.z - 3
         );
 
-        ghostPlayers.forEach((ghost, index) => {
-            const targetZ = playerMesh.position.z + ((index + 1) * 2.8);
-            ghost.position.z += (targetZ - ghost.position.z) * 0.05;
-            ghost.position.x += (playerMesh.position.x - ghost.position.x) * 0.03;
-            ghost.position.y = Math.sin(Date.now() * 0.002 + index) * 0.06;
-        });
-
         arcadeRenderer.render(arcadeScene, arcadeCamera);
     }
     animateArcade();
 }
 
-// CELL INSPECTION MODAL (POP-UP SYSTEM)
+// CELL INSPECTION MODAL (CLEAN BARS ONLY)
 function openCellModal(doorIndex) {
     isModalOpen = true;
     document.getElementById('interaction-prompt').classList.add('hidden');
@@ -611,8 +676,6 @@ function openCellModal(doorIndex) {
     modalElem.classList.remove('hidden');
 
     const textElem = document.getElementById('cell-text');
-    textElem.innerText = cellDialogues[doorIndex] || "[ ... ]";
-
     const container = document.getElementById('cell-canvas-container');
     container.innerHTML = '';
 
@@ -634,46 +697,46 @@ function openCellModal(doorIndex) {
     const ambientLight = new THREE.AmbientLight(0x223322, 1.2);
     cellScene.add(ambientLight);
 
-    const bunkMat = new THREE.MeshStandardMaterial({ color: 0x1f2e1f, flatShading: true });
-    const bunkGeo = new THREE.BoxGeometry(1.2, 1.8, 2.2);
-    const bunk = new THREE.Mesh(bunkGeo, bunkMat);
-    bunk.position.set(-1.2, 0.5, -0.5);
-    cellScene.add(bunk);
-
-    const winGeo = new THREE.BoxGeometry(0.8, 0.6, 0.1);
-    const winMat = new THREE.MeshStandardMaterial({ color: 0x334433, flatShading: true });
-    const win = new THREE.Mesh(winGeo, winMat);
-    win.position.set(0, 1.8, -1.9);
-    cellScene.add(win);
-
     const boneMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, flatShading: true });
 
+    // Clean iron bars across the view
+    const barMat = new THREE.MeshStandardMaterial({ color: 0x555555, flatShading: true });
+    for (let i = -2.0; i <= 2.0; i += 0.4) {
+        const barGeo = new THREE.CylinderGeometry(0.04, 0.04, 3.5, 6);
+        const bar = new THREE.Mesh(barGeo, barMat);
+        bar.position.set(i, 0.8, 0);
+        cellScene.add(bar);
+    }
+
     if (doorIndex === 0) {
-        const skullGeo = new THREE.SphereGeometry(0.2, 6, 6);
-        const skull = new THREE.Mesh(skullGeo, boneMat);
-        skull.position.set(0.4, -0.3, 0);
-        cellScene.add(skull);
+        const lockGeo = new THREE.BoxGeometry(0.3, 0.4, 0.15);
+        const lockMat = new THREE.MeshStandardMaterial({ color: cell1Unlocked ? 0x228b22 : 0xcc3333, flatShading: true });
+        const lock = new THREE.Mesh(lockGeo, lockMat);
+        lock.name = "padlock";
+        lock.position.set(0, 0.5, 0.05);
+        cellScene.add(lock);
+
+        textElem.innerText = cell1Unlocked 
+            ? "[ UNLOCKED // PRESS 'SPACE' TO ENTER ]" 
+            : (hasKey ? "[ PRESS 'E' TO UNLOCK PADLOCK ]" : "[ LOCKED // FIND THE CHEST - GET THE KEY ]");
     } else if (doorIndex === 1) {
+        textElem.innerText = cellDialogues[1];
         const ribGeo = new THREE.BoxGeometry(0.4, 0.3, 0.4);
         const rib = new THREE.Mesh(ribGeo, boneMat);
-        rib.position.set(0.2, -0.3, -0.2);
+        rib.position.set(0.2, 0.5, -0.2);
         cellScene.add(rib);
     } else if (doorIndex === 2) {
+        textElem.innerText = cellDialogues[2];
         const boneGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.8, 5);
         const bone = new THREE.Mesh(boneGeo, boneMat);
         bone.rotation.z = 0.5;
-        bone.position.set(-0.2, -0.2, 0.3);
+        bone.position.set(-0.2, 0.5, 0.3);
         cellScene.add(bone);
     } else if (doorIndex === 3) {
-        const tankGeo = new THREE.CylinderGeometry(0.8, 0.8, 2, 8);
-        const tankMat = new THREE.MeshStandardMaterial({ color: 0x224433, transparent: true, opacity: 0.7, flatShading: true });
-        const tank = new THREE.Mesh(tankGeo, tankMat);
-        tank.position.set(0, 0.6, -0.5);
-        cellScene.add(tank);
-
+        textElem.innerText = cellDialogues[3];
         const skelGeo = new THREE.BoxGeometry(0.4, 1.2, 0.3);
         const skel = new THREE.Mesh(skelGeo, boneMat);
-        skel.position.set(0, 0.6, -0.5);
+        skel.position.set(0, 0.5, -0.5);
         cellScene.add(skel);
 
         cellScene.background = new THREE.Color(0x1a0505);
@@ -702,13 +765,37 @@ function openCellModal(doorIndex) {
     animateCell();
 }
 
+// Fade transition into the empty interior cell
+function enterUnlockedCell() {
+    closeCellModal();
+    const fadeOverlay = document.getElementById('fade-overlay');
+    fadeOverlay.classList.add('active');
+
+    setTimeout(() => {
+        activeDoorIndex = 1; // Advance to next door in corridor
+        
+        // Move player position slightly past the cell door in hallway
+        if (playerMesh) {
+            playerMesh.position.z = -14;
+        }
+
+        setTimeout(() => {
+            fadeOverlay.classList.remove('active');
+        }, 300);
+    }, 600);
+}
+
 function closeCellModal() {
     isModalOpen = false;
     if (cellAnimId) cancelAnimationFrame(cellAnimId);
     document.getElementById('cell-modal').classList.add('hidden');
+
+    const hintElem = document.getElementById('hint-prompt');
+    if (hintElem && cell1Unlocked) {
+        hintElem.classList.add('hidden');
+    }
 }
 
-// Trigger the real-world glitch flash and camera fall recovery
 function triggerRealWorldGlitch() {
     isModalOpen = false;
     document.getElementById('interaction-prompt').classList.add('hidden');
@@ -724,7 +811,6 @@ function triggerRealWorldGlitch() {
     }, 500);
 }
 
-// Trigger the grand finale full-screen scene for Door 4
 function triggerFinalClimaxScene() {
     isModalOpen = true;
     document.getElementById('interaction-prompt').classList.add('hidden');
