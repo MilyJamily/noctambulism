@@ -10,7 +10,6 @@ const sounds = {
     terminalClick: null
 };
 
-// Function to initialize audio listener on the camera
 function setupAudio(camera) {
     if (!audioListener) {
         audioListener = new THREE.AudioListener();
@@ -20,7 +19,6 @@ function setupAudio(camera) {
 
 const audioLoader = new THREE.AudioLoader();
 
-// Load ambient background melody safely
 function loadBackgroundMusic(camera) {
     setupAudio(camera);
     sounds.ambientDrone = new THREE.Audio(audioListener);
@@ -40,7 +38,6 @@ function loadBackgroundMusic(camera) {
     );
 }
 
-// Function to trigger one-shot sound effects safely
 function playSFX(filePath, volume = 0.5) {
     if (!audioListener) return;
 
@@ -60,7 +57,6 @@ function playSFX(filePath, volume = 0.5) {
     );
 }
 
-// LOOP CONTROLS AND GLOBAL VARIABLES
 let bedroomScene, bedroomCamera, bedroomRenderer, bedroomAnimId;
 let doorMesh;
 let isTransitioning = false;
@@ -69,9 +65,16 @@ let transitionProgress = 0;
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
-// Cell Modal & Dialogue State
 let cellScene, cellCamera, cellRenderer, cellAnimId;
 let isModalOpen = false;
+
+// Painting Inspection State
+let paintingScene, paintingCamera, paintingRenderer, paintingAnimId;
+let isPaintingModalOpen = false;
+let paintingMeshModal = null;
+let isPaintingHovered = false;
+let currentPaintingRotationY = 0;
+let paintingSparkles = [];
 
 const cellDialogues = [
     "[ ... ]",
@@ -80,7 +83,7 @@ const cellDialogues = [
     "[ YOU SHOULDN'T HAVE LOOKED UP. ]"
 ];
 
-// 1. TITLE SCREEN & SLEEP BUTTON EVENT
+// TITLE SCREEN
 document.getElementById('start-btn').addEventListener('click', () => {
     const audioCtx = THREE.AudioContext.getContext();
     if (audioCtx && audioCtx.state === 'suspended') {
@@ -108,25 +111,32 @@ document.getElementById('start-btn').addEventListener('click', () => {
     }, 600);
 });
 
-// ESC to return to Title Screen
 document.addEventListener('keydown', (e) => {
     const key = e.key.toLowerCase();
 
     if (e.key === 'Escape') {
         if (isModalOpen) closeCellModal();
+        if (isPaintingModalOpen) closePaintingModal();
 
         if (bedroomAnimId) cancelAnimationFrame(bedroomAnimId);
         if (typeof arcadeAnimId !== 'undefined' && arcadeAnimId) cancelAnimationFrame(arcadeAnimId);
+        if (cellIntAnimId) cancelAnimationFrame(cellIntAnimId);
 
         document.getElementById('arcade-scene').classList.add('hidden');
         document.getElementById('bedroom-scene').classList.add('hidden');
+        document.getElementById('cell-interior-scene').classList.add('hidden');
         document.getElementById('title-screen').classList.remove('hidden');
         document.getElementById('fade-overlay').classList.remove('active');
         isTransitioning = false;
+        isInCellInterior = false;
         return;
     }
 
-    // Handle Space bar to exit modal or enter unlocked cell
+    if (isInCellInterior && key === 'e') {
+        leaveCellInterior();
+        return;
+    }
+
     if (e.key === ' ' && isModalOpen) {
         if (activeDoorIndex === 0 && cell1Unlocked) {
             enterUnlockedCell();
@@ -136,16 +146,14 @@ document.addEventListener('keydown', (e) => {
         return;
     }
 
-    // Handle Padlock unlock with 'E' key on Cell 0
     if (isModalOpen && activeDoorIndex === 0 && hasKey && !cell1Unlocked && key === 'e') {
         cell1Unlocked = true;
         playSFX('assets/sounds/door_open.mp3', 0.8);
-        openCellModal(0); // Refresh modal view to show green padlock and space prompt
+        openCellModal(0);
         return;
     }
 
-    // Handle Chest and Key pickup interaction in hallway
-    if (!isModalOpen && arcadeScene && playerMesh && chestMesh && key === 'e') {
+    if (!isModalOpen && !isPaintingModalOpen && !isInCellInterior && arcadeScene && playerMesh && chestMesh && key === 'e') {
         const distanceToChest = playerMesh.position.distanceTo(chestMesh.position);
         if (distanceToChest < 4.0) {
             if (!chestOpened) {
@@ -168,7 +176,6 @@ document.addEventListener('keydown', (e) => {
                 arcadeScene.remove(keyMesh);
                 arcadeScene.remove(keyLight);
                 document.getElementById('interaction-prompt').classList.add('hidden');
-                console.log("Key collected successfully!");
             }
         }
     }
@@ -303,7 +310,6 @@ function initBedroom3D() {
                     fadeOverlay.classList.remove('active');
                 }, 400);
 
-                console.log("Entering Act 2: Corridor...");
                 initArcade3D();
             }, 2200);
         }
@@ -334,12 +340,17 @@ function initBedroom3D() {
 let arcadeScene, arcadeCamera, arcadeRenderer, arcadeAnimId;
 let playerMesh;
 let skeletonModelRef = null;
-let ghostPlayers = [];
 let corridorDoors = [];
+let corridorPaintings = [];
+let paintingSparkleParticles = [];
 let activeDoorIndex = 0;
+let cellIntScene, cellIntCamera, cellIntRenderer, cellIntAnimId;
+let cellIntYaw = 0;
+let cellIntPitch = 0;
+let isInCellInterior = false;
+
 const keysPressed = {};
 
-// Key, Progress and Cell Variables
 let chestMesh;
 let keyMesh;
 let keyLight;
@@ -353,6 +364,7 @@ const MODEL_FORWARD_OFFSET = -Math.PI / 2;
 let skeletonMixer = null;
 let walkAction = null;
 let idleAction = null;
+let animateArcadeRef = null;
 const clock = new THREE.Clock();
 
 function initArcade3D() {
@@ -368,6 +380,7 @@ function initArcade3D() {
     hasKey = false;
     cell1Unlocked = false;
     activeDoorIndex = 0;
+    isInCellInterior = false;
 
     const container = document.getElementById('arcade-scene');
     container.innerHTML = '<div class="arcade-wrapper" id="arcade-canvas"></div>';
@@ -497,11 +510,59 @@ function initArcade3D() {
         corridorDoors.push(door);
     }
 
+    // CREATE CORRIDOR PAINTINGS & SPARKLES
+    corridorPaintings = [];
+    paintingSparkleParticles = [];
+    const paintingMat = new THREE.MeshStandardMaterial({ color: 0x2a382a, roughness: 0.8, flatShading: true });
+
+    // Painting 1: Near Door 3 (Index 0) -> [ Even if it's just ]
+    const p1 = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.4, 0.1), paintingMat);
+    p1.position.set(-2.9, 1.2, -38);
+    p1.rotation.y = Math.PI / 2;
+    p1.userData = { paintingId: 0, text: "Even if it's just" };
+    arcadeScene.add(p1);
+    corridorPaintings.push(p1);
+
+    // Painting 2: Main / Larger wall facing Door 3 (Index 1) -> [ It is still real ]
+    const p2 = new THREE.Mesh(new THREE.BoxGeometry(1.8, 2.2, 0.12), paintingMat);
+    p2.position.set(2.9, 1.3, -40);
+    p2.rotation.y = -Math.PI / 2;
+    p2.userData = { paintingId: 1, text: "It is still real" };
+    arcadeScene.add(p2);
+    corridorPaintings.push(p2);
+
+    // Painting 3: Next to the 4th/last Door (Index 2) -> [ a fever dream now ]
+    const p3 = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.4, 0.1), paintingMat);
+    p3.position.set(2.9, 1.2, -52);
+    p3.rotation.y = -Math.PI / 2;
+    p3.userData = { paintingId: 2, text: "a fever dream now" };
+    arcadeScene.add(p3);
+    corridorPaintings.push(p3);
+
+    // Add glowing sparkle particles around each painting
+    corridorPaintings.forEach(painting => {
+        const sparkleGeo = new THREE.BufferGeometry();
+        const sparkleCount = 6;
+        const positions = new Float32Array(sparkleCount * 3);
+        for(let i = 0; i < sparkleCount * 3; i += 3) {
+            positions[i] = (Math.random() - 0.5) * 1.2;
+            positions[i+1] = (Math.random() - 0.5) * 1.6;
+            positions[i+2] = (Math.random() - 0.5) * 0.2;
+        }
+        sparkleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        const sparkleMat = new THREE.PointsMaterial({ color: 0x88ffaa, size: 0.12, transparent: true, opacity: 0.8 });
+        const sparkles = new THREE.Points(sparkleGeo, sparkleMat);
+        sparkles.position.copy(painting.position);
+        arcadeScene.add(sparkles);
+        paintingSparkleParticles.push(sparkles);
+    });
+
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('click', onCorridorClick);
 
     function onKeyDown(e) {
-        if (isModalOpen) return;
+        if (isModalOpen || isPaintingModalOpen || isInCellInterior) return;
 
         const key = e.key.toLowerCase();
         if (key === 'w' || key === 's' || key === 'a' || key === 'd') {
@@ -518,6 +579,24 @@ function initArcade3D() {
         if (key === 'w' || key === 's' || key === 'a' || key === 'd') {
             e.preventDefault();
             keysPressed[key] = false;
+        }
+    }
+
+    function onCorridorClick(e) {
+        if (isModalOpen || isPaintingModalOpen || isInCellInterior) return;
+
+        mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, arcadeCamera);
+        const intersects = raycaster.intersectObjects(corridorPaintings);
+
+        if (intersects.length > 0) {
+            const hitPainting = intersects[0].object;
+            const dist = playerMesh.position.distanceTo(hitPainting.position);
+            if (dist < 6.0) {
+                openPaintingModal(hitPainting.userData.paintingId, hitPainting.userData.text);
+            }
         }
     }
 
@@ -550,16 +629,18 @@ function initArcade3D() {
 
     let walkCycle = 0;
 
-    function animateArcade() {
-        arcadeAnimId = requestAnimationFrame(animateArcade);
+    animateArcadeRef = function animateArcade() {
+        arcadeAnimId = requestAnimationFrame(animateArcadeRef);
 
         const delta = clock.getDelta();
         if (skeletonMixer) {
             skeletonMixer.update(delta);
         }
 
-        if (isModalOpen) {
-            arcadeRenderer.render(arcadeScene, arcadeCamera);
+        if (isModalOpen || isPaintingModalOpen || isInCellInterior) {
+            if (!isInCellInterior && !isPaintingModalOpen) {
+                arcadeRenderer.render(arcadeScene, arcadeCamera);
+            }
             return;
         }
 
@@ -601,14 +682,24 @@ function initArcade3D() {
             }
         }
 
-        // Strict UI Priority Check
+        // Hover cursor over paintings or doors
+        raycaster.setFromCamera(new THREE.Vector2(0, 0), arcadeCamera);
+        const centerPaintingHits = raycaster.intersectObjects(corridorPaintings);
+        if (centerPaintingHits.length > 0 && playerMesh.position.distanceTo(centerPaintingHits[0].object.position) < 5.5) {
+            document.body.style.cursor = 'pointer';
+        } else {
+            document.body.style.cursor = 'default';
+        }
+
         const currentDoor = corridorDoors[activeDoorIndex];
         const promptElem = document.getElementById('interaction-prompt');
         const hintElem = document.getElementById('hint-prompt');
         const distanceToChest = playerMesh.position.distanceTo(chestMesh.position);
         let promptText = null;
 
-        if (distanceToChest < 4.0) {
+        if (centerPaintingHits.length > 0 && playerMesh.position.distanceTo(centerPaintingHits[0].object.position) < 5.5) {
+            promptText = "[ CLICK TO INSPECT PAINTING ]";
+        } else if (distanceToChest < 4.0) {
             if (!chestOpened) {
                 promptText = "[ PRESS 'E' TO OPEN CHEST ]";
             } else if (!keyCollected) {
@@ -628,7 +719,6 @@ function initArcade3D() {
             promptElem.classList.add('hidden');
         }
 
-        // Display hint "[ Look back ]" if player moves past Door 2 without unlocking Cell 1
         if (hintElem) {
             if (playerMesh.position.z < -26 && !cell1Unlocked) {
                 hintElem.classList.remove('hidden');
@@ -643,6 +733,16 @@ function initArcade3D() {
             keyLight.position.y = keyMesh.position.y;
             keyMesh.rotation.y += 0.02;
         }
+
+        // Animate sparkle particles floating
+        paintingSparkleParticles.forEach((particles, idx) => {
+            particles.rotation.y += 0.01;
+            const positions = particles.geometry.attributes.position.array;
+            for(let i = 1; i < positions.length; i += 3) {
+                positions[i] += Math.sin(Date.now() * 0.003 + i) * 0.002;
+            }
+            particles.geometry.attributes.position.needsUpdate = true;
+        });
 
         if (isMoving) {
             walkCycle += 0.08;
@@ -664,11 +764,110 @@ function initArcade3D() {
         );
 
         arcadeRenderer.render(arcadeScene, arcadeCamera);
-    }
-    animateArcade();
+    };
+    animateArcadeRef();
 }
 
-// CELL INSPECTION MODAL (CLEAN BARS ONLY)
+// PAINTING INSPECTION MODAL (STABLE 3D HOVER FLIP & CLICK TO EXIT)
+function openPaintingModal(paintingId, paintingText) {
+    isPaintingModalOpen = true;
+    document.getElementById('interaction-prompt').classList.add('hidden');
+    const modalElem = document.getElementById('painting-modal');
+    modalElem.classList.remove('hidden');
+
+    const textElem = document.getElementById('painting-text');
+    textElem.innerText = "[ HOVER OVER PAINTING TO REVEAL ]";
+
+    const container = document.getElementById('painting-canvas-container');
+    container.innerHTML = '';
+
+    paintingScene = new THREE.Scene();
+    paintingScene.background = new THREE.Color(0x020402);
+
+    paintingCamera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.1, 100);
+    paintingCamera.position.set(0, 0, 3);
+    paintingCamera.lookAt(0, 0, 0);
+
+    paintingRenderer = new THREE.WebGLRenderer({ antialias: false });
+    paintingRenderer.setSize(container.clientWidth, container.clientHeight);
+    container.appendChild(paintingRenderer.domElement);
+
+    const light = new THREE.PointLight(0x88aa88, 2, 10);
+    light.position.set(0, 2, 2);
+    paintingScene.add(light);
+
+    const ambientLight = new THREE.AmbientLight(0x334433, 1.2);
+    paintingScene.add(ambientLight);
+
+    const pGeo = paintingId === 1 ? new THREE.BoxGeometry(2.0, 2.4, 0.1) : new THREE.BoxGeometry(1.2, 1.6, 0.08);
+    const pMat = new THREE.MeshStandardMaterial({ color: 0x1f331f, roughness: 0.5, flatShading: true });
+    
+    paintingMeshModal = new THREE.Mesh(pGeo, pMat);
+    paintingScene.add(paintingMeshModal);
+
+    currentPaintingRotationY = 0;
+    isPaintingHovered = false;
+
+    const canvasElem = paintingRenderer.domElement;
+
+    function handleMouseMove(e) {
+        const rect = canvasElem.getBoundingClientRect();
+        const mx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        const my = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+        const ray = new THREE.Raycaster();
+        ray.setFromCamera(new THREE.Vector2(mx, my), paintingCamera);
+        const hits = ray.intersectObject(paintingMeshModal);
+
+        if (hits.length > 0) {
+            isPaintingHovered = true;
+            textElem.innerText = `[ "${paintingText}" ]`;
+            document.body.style.cursor = 'pointer';
+        } else {
+            isPaintingHovered = false;
+            textElem.innerText = "[ HOVER OVER PAINTING TO REVEAL ]";
+            document.body.style.cursor = 'default';
+        }
+    }
+
+    function handleClick(e) {
+        const rect = canvasElem.getBoundingClientRect();
+        const mx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        const my = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+        const ray = new THREE.Raycaster();
+        ray.setFromCamera(new THREE.Vector2(mx, my), paintingCamera);
+        const hits = ray.intersectObject(paintingMeshModal);
+
+        if (hits.length > 0) {
+            closePaintingModal();
+        }
+    }
+
+    canvasElem.addEventListener('mousemove', handleMouseMove);
+    canvasElem.addEventListener('click', handleClick);
+
+    function animatePainting() {
+        if (!isPaintingModalOpen) return;
+        paintingAnimId = requestAnimationFrame(animatePainting);
+
+        const targetRotY = isPaintingHovered ? Math.PI : 0;
+        currentPaintingRotationY += (targetRotY - currentPaintingRotationY) * 0.15;
+        paintingMeshModal.rotation.y = currentPaintingRotationY;
+
+        paintingRenderer.render(paintingScene, paintingCamera);
+    }
+    animatePainting();
+}
+
+function closePaintingModal() {
+    isPaintingModalOpen = false;
+    document.body.style.cursor = 'default';
+    if (paintingAnimId) cancelAnimationFrame(paintingAnimId);
+    document.getElementById('painting-modal').classList.add('hidden');
+}
+
+// CELL INSPECTION MODAL
 function openCellModal(doorIndex) {
     isModalOpen = true;
     document.getElementById('interaction-prompt').classList.add('hidden');
@@ -699,7 +898,6 @@ function openCellModal(doorIndex) {
 
     const boneMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, flatShading: true });
 
-    // Clean iron bars across the view
     const barMat = new THREE.MeshStandardMaterial({ color: 0x555555, flatShading: true });
     for (let i = -2.0; i <= 2.0; i += 0.4) {
         const barGeo = new THREE.CylinderGeometry(0.04, 0.04, 3.5, 6);
@@ -765,23 +963,58 @@ function openCellModal(doorIndex) {
     animateCell();
 }
 
-// Fade transition into the empty interior cell
 function enterUnlockedCell() {
     closeCellModal();
+    document.getElementById('interaction-prompt').classList.add('hidden');
+
     const fadeOverlay = document.getElementById('fade-overlay');
     fadeOverlay.classList.add('active');
 
     setTimeout(() => {
-        activeDoorIndex = 1; // Advance to next door in corridor
-        
-        // Move player position slightly past the cell door in hallway
+        if (arcadeAnimId) cancelAnimationFrame(arcadeAnimId);
+
+        document.getElementById('arcade-scene').classList.add('hidden');
+        const cellIntElem = document.getElementById('cell-interior-scene');
+        cellIntElem.classList.remove('hidden');
+
+        isInCellInterior = true;
+        initCellInterior3D();
+
+        const promptElem = document.getElementById('interaction-prompt');
+        promptElem.innerText = "[ PRESS 'E' TO LEAVE ]";
+        promptElem.classList.remove('hidden');
+
+        setTimeout(() => {
+            fadeOverlay.classList.remove('active');
+        }, 400);
+    }, 600);
+}
+
+function leaveCellInterior() {
+    const fadeOverlay = document.getElementById('fade-overlay');
+    fadeOverlay.classList.add('active');
+
+    setTimeout(() => {
+        if (cellIntAnimId) cancelAnimationFrame(cellIntAnimId);
+
+        document.getElementById('cell-interior-scene').classList.add('hidden');
+        document.getElementById('arcade-scene').classList.remove('hidden');
+        document.getElementById('interaction-prompt').classList.add('hidden');
+
+        isInCellInterior = false;
+        activeDoorIndex = 1;
+
         if (playerMesh) {
-            playerMesh.position.z = -14;
+            playerMesh.position.set(0, 0, -14);
+        }
+
+        if (animateArcadeRef) {
+            animateArcadeRef();
         }
 
         setTimeout(() => {
             fadeOverlay.classList.remove('active');
-        }, 300);
+        }, 400);
     }, 600);
 }
 
@@ -881,4 +1114,101 @@ function triggerFinalClimaxScene() {
         animateFinal();
 
     }, 1000);
+}
+
+// CELL 1 INTERIOR
+function initCellInterior3D() {
+    const container = document.getElementById('cell-interior-scene');
+    container.innerHTML = '<div class="arcade-wrapper" id="cell-int-canvas"></div>';
+    const wrapper = document.getElementById('cell-int-canvas');
+
+    cellIntScene = new THREE.Scene();
+    const roomColor = 0x050d05;
+    cellIntScene.background = new THREE.Color(roomColor);
+    cellIntScene.fog = new THREE.FogExp2(roomColor, 0.03);
+
+    cellIntCamera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 1000);
+    cellIntCamera.position.set(0, 0.6, 0);
+
+    cellIntRenderer = new THREE.WebGLRenderer({ antialias: false });
+    cellIntRenderer.setSize(window.innerWidth, window.innerHeight);
+    wrapper.appendChild(cellIntRenderer.domElement);
+
+    const ambientLight = new THREE.AmbientLight(0x334433, 1.5);
+    cellIntScene.add(ambientLight);
+
+    const cellLight = new THREE.PointLight(0x66aa66, 2.5, 12);
+    cellLight.position.set(0, 2.5, 0);
+    cellIntScene.add(cellLight);
+
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0x162616, flatShading: true });
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0x0d1a0d, flatShading: true });
+
+    const floorGeo = new THREE.PlaneGeometry(8, 8);
+    const floor = new THREE.Mesh(floorGeo, floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.set(0, -1, 0);
+    cellIntScene.add(floor);
+
+    const ceil = new THREE.Mesh(floorGeo, floorMat);
+    ceil.rotation.x = Math.PI / 2;
+    ceil.position.set(0, 3, 0);
+    cellIntScene.add(ceil);
+
+    const wallGeoHoriz = new THREE.BoxGeometry(8, 4, 0.4);
+    const wallGeoVert = new THREE.BoxGeometry(0.4, 4, 8);
+
+    const backWall = new THREE.Mesh(wallGeoHoriz, wallMat);
+    backWall.position.set(0, 1, -4);
+    cellIntScene.add(backWall);
+
+    const leftWall = new THREE.Mesh(wallGeoVert, wallMat);
+    leftWall.position.set(-4, 1, 0);
+    cellIntScene.add(leftWall);
+
+    const rightWall = new THREE.Mesh(wallGeoVert, wallMat);
+    rightWall.position.set(4, 1, 0);
+    cellIntScene.add(rightWall);
+
+    const frontWall = new THREE.Mesh(wallGeoHoriz, wallMat);
+    frontWall.position.set(0, 1, 4);
+    cellIntScene.add(frontWall);
+
+    const barMat = new THREE.MeshStandardMaterial({ color: 0x444444, flatShading: true });
+    for (let i = -1.8; i <= 1.8; i += 0.6) {
+        const barGeo = new THREE.CylinderGeometry(0.04, 0.04, 4, 6);
+        const bar = new THREE.Mesh(barGeo, barMat);
+        bar.position.set(i, 1, 3.8);
+        cellIntScene.add(bar);
+    }
+
+    cellIntYaw = 0;
+    cellIntPitch = 0;
+
+    function onCellMouseMove(e) {
+        if (!isInCellInterior) return;
+        const sensitivity = 0.0025;
+        cellIntYaw -= e.movementX * sensitivity;
+        cellIntPitch -= e.movementY * sensitivity;
+
+        cellIntPitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, cellIntPitch));
+    }
+
+    window.addEventListener('mousemove', onCellMouseMove);
+
+    function animateCellInterior() {
+        if (!isInCellInterior) {
+            window.removeEventListener('mousemove', onCellMouseMove);
+            return;
+        }
+
+        cellIntAnimId = requestAnimationFrame(animateCellInterior);
+
+        cellIntCamera.rotation.order = 'YXZ';
+        cellIntCamera.rotation.y = cellIntYaw;
+        cellIntCamera.rotation.x = cellIntPitch;
+
+        cellIntRenderer.render(cellIntScene, cellIntCamera);
+    }
+    animateCellInterior();
 }

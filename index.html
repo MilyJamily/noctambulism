@@ -45,6 +45,20 @@
                 </div>
             </div>
         </div>
+
+        <!-- Painting Inspection Modal -->
+        <div id="painting-modal" class="hidden">
+            <div class="cell-modal-frame">
+                <div class="cell-header">
+                    <span class="cell-title">INSPECTION // PAINTING_ANOMALY</span>
+                    <span class="cell-close-hint">[ CLICK PAINTING TO LEAVE ]</span>
+                </div>
+                <div id="painting-canvas-container"></div>
+                <div id="painting-dialogue-box">
+                    <span id="painting-text">[ ... ]</span>
+                </div>
+            </div>
+        </div>
         
         <!-- Fade Overlay Transitions -->
         <div id="fade-overlay"></div>
@@ -64,6 +78,7 @@
 
         <!-- Act 2: The Dream / Endless Hallway -->
         <div id="arcade-scene" class="screen hidden"></div>
+        <div id="cell-interior-scene" class="scene hidden"></div>
     </div>
 
     <script type="module" src="script.js"></script>
