@@ -88,6 +88,9 @@ let isPaintingHovered = false;
 let currentPaintingRotationY = 0;
 let paintingSparkles = [];
 
+// Textures for Corridor Paintings
+let texSkeletonBase, texSkeletonDiff, texBlueTank;
+
 // Cell 2 Jumpscare State
 let cell2InspectedOnce = false;
 let cell2JumpscareTriggered = false;
@@ -564,28 +567,44 @@ function initArcade3D() {
         corridorDoors.push(door);
     }
 
-    // CREATE CORRIDOR PAINTINGS & SPARKLES
+    // CREATE TEXTURES FOR CORRIDOR PAINTINGS
+    const textureLoader = new THREE.TextureLoader();
+    texSkeletonBase = textureLoader.load('assets/images/wtf_bright_skeleton.png');
+    texSkeletonDiff = textureLoader.load('assets/images/skeleton_headphone.png');
+    texBlueTank = textureLoader.load('assets/images/blueTank.png');
+
+    [texSkeletonBase, texSkeletonDiff, texBlueTank].forEach(tex => {
+        tex.minFilter = THREE.NearestFilter;
+        tex.magFilter = THREE.NearestFilter;
+    });
+
     corridorPaintings = [];
     paintingSparkleParticles = [];
-    const paintingMat = new THREE.MeshStandardMaterial({ color: 0x2a382a, roughness: 0.8, flatShading: true });
 
-    const p1 = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.4, 0.1), paintingMat);
+    const matP1 = new THREE.MeshStandardMaterial({ map: texSkeletonBase, roughness: 0.8, flatShading: true });
+    const matP2 = new THREE.MeshStandardMaterial({ map: texSkeletonDiff, roughness: 0.8, flatShading: true });
+    const matP3 = new THREE.MeshStandardMaterial({ map: texBlueTank, roughness: 0.8, flatShading: true });
+
+    // Painting 1 (Left wall - Smaller frame)
+    const p1 = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.4, 0.1), matP1);
     p1.position.set(-2.9, 1.2, -38);
     p1.rotation.y = Math.PI / 2;
     p1.userData = { paintingId: 0, text: "Even if it's just" };
     arcadeScene.add(p1);
     corridorPaintings.push(p1);
 
-    const p2 = new THREE.Mesh(new THREE.BoxGeometry(1.8, 2.2, 0.12), paintingMat);
-    p2.position.set(2.9, 1.3, -40);
+    // Painting 2 (Right wall - Smaller frame with skeleton variation element)
+    const p2 = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.4, 0.1), matP2);
+    p2.position.set(2.9, 1.2, -40);
     p2.rotation.y = -Math.PI / 2;
     p2.userData = { paintingId: 1, text: "It is still real" };
     arcadeScene.add(p2);
     corridorPaintings.push(p2);
 
-    const p3 = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.4, 0.1), paintingMat);
-    p3.position.set(2.9, 1.2, -52);
-    p3.rotation.y = -Math.PI / 2;
+    // Painting 3 (Back wall center - Larger frame with Blue Tank image, repositioned closer at z: -48)
+    const p3 = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.8, 0.12), matP3);
+    p3.position.set(0, 1.4, -48);
+    p3.rotation.y = 0;
     p3.userData = { paintingId: 2, text: "a fever dream now" };
     arcadeScene.add(p3);
     corridorPaintings.push(p3);
@@ -847,8 +866,18 @@ function openPaintingModal(paintingId, paintingText) {
     const ambientLight = new THREE.AmbientLight(0x334433, 1.2);
     paintingScene.add(ambientLight);
 
-    const pGeo = paintingId === 1 ? new THREE.BoxGeometry(2.0, 2.4, 0.1) : new THREE.BoxGeometry(1.2, 1.6, 0.08);
-    const pMat = new THREE.MeshStandardMaterial({ color: 0x1f331f, roughness: 0.5, flatShading: true });
+    // Select correct texture for modal view
+    let modalTexture;
+    if (paintingId === 0) modalTexture = texSkeletonBase;
+    else if (paintingId === 1) modalTexture = texSkeletonDiff;
+    else modalTexture = texBlueTank;
+
+    modalTexture.minFilter = THREE.NearestFilter;
+    modalTexture.magFilter = THREE.NearestFilter;
+
+    const pMat = new THREE.MeshStandardMaterial({ map: modalTexture, roughness: 0.5, flatShading: true });
+    // Correct proportions for big painting vs smaller ones
+    const pGeo = paintingId === 2 ? new THREE.BoxGeometry(2.2, 1.6, 0.08) : new THREE.BoxGeometry(1.2, 1.6, 0.08);
     
     paintingMeshModal = new THREE.Mesh(pGeo, pMat);
     paintingScene.add(paintingMeshModal);
@@ -887,13 +916,19 @@ function openPaintingModal(paintingId, paintingText) {
         ray.setFromCamera(new THREE.Vector2(mx, my), paintingCamera);
         const hits = ray.intersectObject(paintingMeshModal);
 
-        if (hits.length > 0) {
+        // Close modal either by clicking the painting or clicking anywhere inside container as a fallback
+        if (hits.length > 0 || e.target === canvasElem) {
             closePaintingModal();
         }
     }
 
     canvasElem.addEventListener('mousemove', handleMouseMove);
     canvasElem.addEventListener('click', handleClick);
+
+    // Fallback click on container background to ensure it never gets stuck
+    container.onclick = function() {
+        closePaintingModal();
+    };
 
     function animatePainting() {
         if (!isPaintingModalOpen) return;
@@ -937,7 +972,7 @@ function openCellModal(doorIndex) {
             playSFX('assets/sounds/explosion_sound.mp3', 0.9); // Explosion/Glitch sound
 
             container.innerHTML = `<video src="assets/images/skeleton_dancin.mp4" class="jumpscare-gif" autoplay loop muted playsinline></video>`;
-            textElem.innerText = "[ BOOM // DANCE OFF HEHE ]";
+            textElem.innerText = "[ BOOM // DANCE IT OFF HEHE ]";
         }, 1000); // 1 second before jumpscare
 
         return;
