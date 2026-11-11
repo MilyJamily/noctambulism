@@ -63,8 +63,14 @@
         <!-- Fade Overlay Transitions -->
         <div id="fade-overlay"></div>
 
-        <!-- Real World Glitch Effect -->
-        <div id="real-glitch-overlay"></div>
+        <!-- Splash Screen: Headphones Recommended -->
+        <div id="splash-screen" class="screen">
+            <div class="headphone-icon-container">
+                <img src="assets/images/skeleton_headphone.png" id="headphone-icon" alt="Headphone">
+            </div>
+            <p class="splash-text">[ HEADPHONES RECOMMENDED ]</p>
+            <p class="splash-subtext">Click anywhere to start</p>
+        </div>
 
         <!-- Title Screen -->
         <div id="title-screen" class="screen">
@@ -80,6 +86,9 @@
         <div id="arcade-scene" class="screen hidden"></div>
         <div id="cell-interior-scene" class="scene hidden"></div>
     </div>
+
+    <!-- Cell 2 hint after close first inspection -->
+    <div id="cell2-hint-prompt" class="hint-text hidden">[ Are you sure you didn't miss anything there? ]</div>
 
     <script type="module" src="script.js"></script>
 </body>

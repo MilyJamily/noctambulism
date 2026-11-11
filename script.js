@@ -2,46 +2,57 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 // AUDIO MANAGEMENT SYSTEM
-let audioListener;
-const sounds = {
-    ambientDrone: null,
-    step: null,
-    doorOpen: null,
-    terminalClick: null
-};
-
-function setupAudio(camera) {
-    if (!audioListener) {
-        audioListener = new THREE.AudioListener();
-    }
-    camera.add(audioListener);
-}
-
+let globalAudioListener = null;
 const audioLoader = new THREE.AudioLoader();
 
-function loadBackgroundMusic(camera) {
-    setupAudio(camera);
-    sounds.ambientDrone = new THREE.Audio(audioListener);
-
-    audioLoader.load(
-        'assets/sounds/weird_melody.mp3',
-        function(buffer) {
-            sounds.ambientDrone.setBuffer(buffer);
-            sounds.ambientDrone.setLoop(true);
-            sounds.ambientDrone.setVolume(0.3);
-            sounds.ambientDrone.play();
-        },
-        undefined,
-        function(error) {
-            console.warn("Audio load warning (weird_melody): ", error);
+// Setup global audio listener attached to active camera
+function setupAudio(camera) {
+    if (!globalAudioListener) {
+        globalAudioListener = new THREE.AudioListener();
+        camera.add(globalAudioListener);
+    } else if (globalAudioListener.parent !== camera) {
+        if (globalAudioListener.parent) {
+            globalAudioListener.parent.remove(globalAudioListener);
         }
-    );
+        camera.add(globalAudioListener);
+    }
+}
+
+// Play Intro song then Ambient soundtrack seamlessly
+function playGameAudioSequence(camera) {
+    setupAudio(camera);
+
+    const introSound = new THREE.Audio(globalAudioListener);
+    const ambientLoopSound = new THREE.Audio(globalAudioListener);
+
+    // 1. Load intro melody (.mp3)
+    audioLoader.load('assets/sounds/Noctambulism_Intro_soundtrack.mp3', function(introBuffer) {
+        introSound.setBuffer(introBuffer);
+        introSound.setLoop(false);
+        introSound.setVolume(0.6);
+
+        // 2. Load ambient soundtrack (.mp3)
+        audioLoader.load('assets/sounds/Noctambulism_Ambient_soundtrack.mp3', function(ambientBuffer) {
+            ambientLoopSound.setBuffer(ambientBuffer);
+            ambientLoopSound.setLoop(true);
+            ambientLoopSound.setVolume(0.4);
+
+            // When intro ends, ambient loop triggers automatically
+            introSound.onEnded = function() {
+                ambientLoopSound.play();
+            };
+            
+            introSound.play();
+        });
+    }, undefined, function(err) {
+        console.warn("Audio load warning:", err);
+    });
 }
 
 function playSFX(filePath, volume = 0.5) {
-    if (!audioListener) return;
+    if (!globalAudioListener) return;
 
-    const sound = new THREE.Audio(audioListener);
+    const sound = new THREE.Audio(globalAudioListener);
     audioLoader.load(
         filePath,
         function(buffer) {
@@ -57,6 +68,7 @@ function playSFX(filePath, volume = 0.5) {
     );
 }
 
+// LOOP CONTROLS AND GLOBAL VARIABLES
 let bedroomScene, bedroomCamera, bedroomRenderer, bedroomAnimId;
 let doorMesh;
 let isTransitioning = false;
@@ -76,12 +88,51 @@ let isPaintingHovered = false;
 let currentPaintingRotationY = 0;
 let paintingSparkles = [];
 
+// Cell 2 Jumpscare State
+let cell2InspectedOnce = false;
+let cell2JumpscareTriggered = false;
+let cell2Timeout = null;
+
 const cellDialogues = [
     "[ ... ]",
     "[ Not here kid. ]",
     "[ Keep... ]",
     "[ YOU SHOULDN'T HAVE LOOKED UP. ]"
 ];
+
+// Dummy camera used to hold the audio listener on splash screen interaction
+let splashAudioCamera = null;
+
+// "HEADPHONES RECOMMENDED" Screen with Smooth Fade-Out & Fade-In to Title Screen
+document.getElementById('splash-screen').addEventListener('click', () => {
+    const audioCtx = THREE.AudioContext.getContext();
+    if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+    }
+
+    const splashElem = document.getElementById('splash-screen');
+    const fadeOverlay = document.getElementById('fade-overlay');
+
+    // Create a dummy camera just to host the audio listener safely
+    if (!splashAudioCamera) {
+        splashAudioCamera = new THREE.PerspectiveCamera();
+    }
+
+    // Initialize audio sequence right on user interaction gesture
+    playGameAudioSequence(splashAudioCamera);
+
+    // Fade to black (Fade-out)
+    fadeOverlay.classList.add('active');
+
+    setTimeout(() => {
+        splashElem.classList.add('hidden'); // Hide headphones screen
+        
+        // Short delay before fading back in to Title Screen
+        setTimeout(() => {
+            fadeOverlay.classList.remove('active'); // Fade-in
+        }, 400);
+    }, 600);
+});
 
 // TITLE SCREEN
 document.getElementById('start-btn').addEventListener('click', () => {
@@ -102,7 +153,6 @@ document.getElementById('start-btn').addEventListener('click', () => {
 
         requestAnimationFrame(() => {
             initBedroom3D();
-            loadBackgroundMusic(bedroomCamera);
         });
 
         setTimeout(() => {
@@ -202,6 +252,8 @@ function initBedroom3D() {
     bedroomRenderer = new THREE.WebGLRenderer({ antialias: false });
     bedroomRenderer.setSize(window.innerWidth, window.innerHeight);
     wrapper.appendChild(bedroomRenderer.domElement);
+
+    setupAudio(bedroomCamera);
 
     const ambientLight = new THREE.AmbientLight(0x445544, 1.6);
     bedroomScene.add(ambientLight);
@@ -397,6 +449,8 @@ function initArcade3D() {
     arcadeRenderer.setSize(window.innerWidth, window.innerHeight);
     wrapper.appendChild(arcadeRenderer.domElement);
 
+    setupAudio(arcadeCamera);
+
     const ambientLight = new THREE.AmbientLight(0x333b2b, 1.3);
     arcadeScene.add(ambientLight);
 
@@ -515,7 +569,6 @@ function initArcade3D() {
     paintingSparkleParticles = [];
     const paintingMat = new THREE.MeshStandardMaterial({ color: 0x2a382a, roughness: 0.8, flatShading: true });
 
-    // Painting 1: Near Door 3 (Index 0) -> [ Even if it's just ]
     const p1 = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.4, 0.1), paintingMat);
     p1.position.set(-2.9, 1.2, -38);
     p1.rotation.y = Math.PI / 2;
@@ -523,7 +576,6 @@ function initArcade3D() {
     arcadeScene.add(p1);
     corridorPaintings.push(p1);
 
-    // Painting 2: Main / Larger wall facing Door 3 (Index 1) -> [ It is still real ]
     const p2 = new THREE.Mesh(new THREE.BoxGeometry(1.8, 2.2, 0.12), paintingMat);
     p2.position.set(2.9, 1.3, -40);
     p2.rotation.y = -Math.PI / 2;
@@ -531,7 +583,6 @@ function initArcade3D() {
     arcadeScene.add(p2);
     corridorPaintings.push(p2);
 
-    // Painting 3: Next to the 4th/last Door (Index 2) -> [ a fever dream now ]
     const p3 = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.4, 0.1), paintingMat);
     p3.position.set(2.9, 1.2, -52);
     p3.rotation.y = -Math.PI / 2;
@@ -539,7 +590,6 @@ function initArcade3D() {
     arcadeScene.add(p3);
     corridorPaintings.push(p3);
 
-    // Add glowing sparkle particles around each painting
     corridorPaintings.forEach(painting => {
         const sparkleGeo = new THREE.BufferGeometry();
         const sparkleCount = 6;
@@ -682,7 +732,6 @@ function initArcade3D() {
             }
         }
 
-        // Hover cursor over paintings or doors
         raycaster.setFromCamera(new THREE.Vector2(0, 0), arcadeCamera);
         const centerPaintingHits = raycaster.intersectObjects(corridorPaintings);
         if (centerPaintingHits.length > 0 && playerMesh.position.distanceTo(centerPaintingHits[0].object.position) < 5.5) {
@@ -734,7 +783,6 @@ function initArcade3D() {
             keyMesh.rotation.y += 0.02;
         }
 
-        // Animate sparkle particles floating
         paintingSparkleParticles.forEach((particles, idx) => {
             particles.rotation.y += 0.01;
             const positions = particles.geometry.attributes.position.array;
@@ -768,7 +816,7 @@ function initArcade3D() {
     animateArcadeRef();
 }
 
-// PAINTING INSPECTION MODAL (STABLE 3D HOVER FLIP & CLICK TO EXIT)
+// PAINTING INSPECTION MODAL
 function openPaintingModal(paintingId, paintingText) {
     isPaintingModalOpen = true;
     document.getElementById('interaction-prompt').classList.add('hidden');
@@ -867,7 +915,7 @@ function closePaintingModal() {
     document.getElementById('painting-modal').classList.add('hidden');
 }
 
-// CELL INSPECTION MODAL
+// CELL 2 INSPECTION MODAL WITH JUMPSCARE
 function openCellModal(doorIndex) {
     isModalOpen = true;
     document.getElementById('interaction-prompt').classList.add('hidden');
@@ -877,6 +925,23 @@ function openCellModal(doorIndex) {
     const textElem = document.getElementById('cell-text');
     const container = document.getElementById('cell-canvas-container');
     container.innerHTML = '';
+
+    // JUMPSCARE CELL2
+    if (doorIndex === 1 && cell2InspectedOnce) {
+        cell2JumpscareTriggered = true;
+        container.style.backgroundColor = '#000000';
+        textElem.innerText = "[ ... ]";
+
+        // Timeout for BOOM (SFX Explosion + GIF)
+        cell2Timeout = setTimeout(() => {
+            playSFX('assets/sounds/explosion_sound.mp3', 0.9); // Explosion/Glitch sound
+
+            container.innerHTML = `<video src="assets/images/skeleton_dancin.mp4" class="jumpscare-gif" autoplay loop muted playsinline></video>`;
+            textElem.innerText = "[ BOOM // DANCE OFF HEHE ]";
+        }, 1000); // 1 second before jumpscare
+
+        return;
+    }
 
     cellScene = new THREE.Scene();
     cellScene.background = new THREE.Color(0x040804);
@@ -963,6 +1028,33 @@ function openCellModal(doorIndex) {
     animateCell();
 }
 
+function closeCellModal() {
+    isModalOpen = false;
+    if (cellAnimId) cancelAnimationFrame(cellAnimId);
+    if (cell2Timeout) clearTimeout(cell2Timeout);
+    document.getElementById('cell-modal').classList.add('hidden');
+
+    // If just closed Cell 2 for the first time, activate hint
+    if (activeDoorIndex === 1 && !cell2InspectedOnce) {
+        cell2InspectedOnce = true;
+        const cell2Hint = document.getElementById('cell2-hint-prompt');
+        if (cell2Hint) {
+            cell2Hint.classList.remove('hidden');
+        }
+    }
+
+    // After jumpscare, hint hides
+    if (cell2JumpscareTriggered) {
+        const cell2Hint = document.getElementById('cell2-hint-prompt');
+        if (cell2Hint) cell2Hint.classList.add('hidden');
+    }
+
+    const hintElem = document.getElementById('hint-prompt');
+    if (hintElem && cell1Unlocked) {
+        hintElem.classList.add('hidden');
+    }
+}
+
 function enterUnlockedCell() {
     closeCellModal();
     document.getElementById('interaction-prompt').classList.add('hidden');
@@ -1016,17 +1108,6 @@ function leaveCellInterior() {
             fadeOverlay.classList.remove('active');
         }, 400);
     }, 600);
-}
-
-function closeCellModal() {
-    isModalOpen = false;
-    if (cellAnimId) cancelAnimationFrame(cellAnimId);
-    document.getElementById('cell-modal').classList.add('hidden');
-
-    const hintElem = document.getElementById('hint-prompt');
-    if (hintElem && cell1Unlocked) {
-        hintElem.classList.add('hidden');
-    }
 }
 
 function triggerRealWorldGlitch() {
